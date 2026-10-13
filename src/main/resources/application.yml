@@ -1,0 +1,29 @@
+server:
+  servlet:
+    context-path: /api/v1
+  error:
+    include-stacktrace: never
+    include-message: never
+
+spring:
+  application:
+    name: oficina-mecanica
+  profiles:
+    # Sem perfil informado, usa o H2 local (application-local.yml). Para Postgres: perfil "postgres".
+    default: local
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  flyway:
+    # Cria/atualiza as tabelas na inicialização executando src/main/resources/db/migration (V1, V2, V3...)
+    enabled: true
+  mvc:
+    problemdetails:
+      enabled: true
+
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    url: /api/v1/oficina-mecanica-contract.yaml

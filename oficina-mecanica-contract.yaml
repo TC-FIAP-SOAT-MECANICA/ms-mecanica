@@ -1,0 +1,1541 @@
+openapi: 3.0.3
+info:
+  title: Oficina Mecânica — Sistema Integrado de Atendimento e Execução de Serviços (MVP)
+  version: 3.0.0
+  description: |
+    API RESTful do back-end monolítico da oficina mecânica, construída com **DDD** e **Clean Architecture**
+    e seguindo o **OWASP API Security Top 10 (2023)**.
+
+    ---
+    ## 1. Clean Architecture — como este contrato se encaixa
+
+    ```
+    ┌──────────────────────────────────────────────────────────────────────┐
+    │ Frameworks & Drivers  →  HTTP (este contrato), Banco de dados, E-mail  │
+    │ Interface Adapters    →  Controllers, Presenters, DTOs (Request/Resp.) │
+    │ Application           →  Use Cases (1 operação = 1 caso de uso)        │
+    │ Domain                →  Entidades, Value Objects, Agregados, Eventos  │
+    └──────────────────────────────────────────────────────────────────────┘
+               Dependências apontam sempre para dentro (Domain não conhece HTTP)
+    ```
+
+    Convenções aplicadas no contrato:
+    - **Uma operação = um caso de uso**, nomeado a partir do `operationId`
+      (ex.: `abrirOrdemServico` → `AbrirOrdemServicoUseCase`). O controller só converte DTO ⇄ comando e delega.
+    - **DTOs de entrada e saída separados** (`*Request` / `*Response`). O modelo de domínio e as
+      entidades de persistência nunca são expostos diretamente.
+    - **Transições de estado são comandos explícitos** (`POST /ordens-servico/{id}/diagnostico`, `/finalizacao` …),
+      nunca um `PATCH status` genérico. A regra de transição vive no agregado `OrdemServico`.
+    - **Value Objects** do domínio aparecem como schemas reutilizáveis: `Documento` (CPF/CNPJ), `Placa`, `Dinheiro`, `Quantidade`.
+    - **Bounded contexts** viram tags: Identidade & Acesso, Cadastro, Catálogo, Estoque, Atendimento (OS),
+      Portal do Cliente e Métricas.
+    - **Erros de domínio** são mapeados para HTTP em um único ponto (exception handler), no formato
+      RFC 9457 (`application/problem+json`) com `codigo` estável (ver `CodigoErro`).
+    - Valores monetários trafegam como **string decimal** (sem ponto flutuante).
+
+    ---
+    ## 2. Convenções HTTP (valem para todas as operações)
+
+    Para manter o contrato enxuto, o que é comum a todas as operações está descrito aqui, e não repetido em cada uma:
+
+    | Item | Regra |
+    |---|---|
+    | `X-Request-Id` | Opcional no request (UUID). Sempre devolvido na resposta (ecoado ou gerado) e igual a `Problem.traceId`. |
+    | `Cache-Control: no-store` | Em toda resposta autenticada e nas respostas de `/auth` e `/portal`. |
+    | `ETag` / `If-Match` | `GET`, `POST` e `PUT` de recursos mutáveis devolvem `ETag`. Operações com `If-Match` respondem `428` se ele faltar e `412` se estiver desatualizado. |
+    | `Location` | Em toda resposta `201`. |
+    | Rate limit | `429` com `Retry-After` e `RateLimit-Limit/Remaining/Reset`. |
+    | Erros genéricos | `400`, `401`, `403`, `415`, `429` e `500` podem ocorrer em qualquer operação e ficam em `default`. Cada operação lista só os erros específicos dela (`404`, `409`, `422`). |
+
+    ---
+    ## 3. Segurança (OWASP API Top 10)
+
+    | Risco | Mitigação neste contrato |
+    |---|---|
+    | API1 — BOLA | IDs UUID v4 (não sequenciais); o Portal do Cliente não recebe ID de OS: a OS vem do **token** do cliente. |
+    | API2 — Broken Authentication | JWT de acesso curto (**15 min**) + refresh token rotativo com detecção de reuso; logout revoga; login com limite de tentativas e mensagem genérica; cliente autentica por **OTP**, não por CPF. |
+    | API3 — Broken Object Property Level Auth. | `additionalProperties: false` em todos os requests (evita *mass assignment*); campos `readOnly`; respostas do cliente com dados mascarados. |
+    | API4 — Unrestricted Resource Consumption | `maxLength`/`maxItems`/`maximum` em todos os campos; paginação limitada a 100; rate limiting. |
+    | API5 — Broken Function Level Auth. | RBAC por operação (`x-roles`): `ADMIN`, `ATENDENTE`, `MECANICO`; `403` quando o perfil não permite. |
+    | API6 — Fluxos de negócio sensíveis | `Idempotency-Key` obrigatório em comandos (abrir OS, decidir orçamento, mover estoque). |
+    | API7 — SSRF | Nenhum endpoint aceita URL fornecida pelo usuário. |
+    | API8 — Security Misconfiguration | HTTPS obrigatório fora do ambiente local; `Strict-Transport-Security`, `X-Content-Type-Options: nosniff`; CORS restrito; erros sem *stack trace*. |
+    | API9 — Improper Inventory Management | Versionamento na URL (`/api/v1`); operações obsoletas marcadas com `deprecated`. |
+    | API10 — Unsafe Consumption of APIs | Não há consumo de APIs de terceiros no MVP (envio de e-mail/SMS via adaptador isolado). |
+
+    **Dados pessoais (LGPD):** CPF/CNPJ nunca aparece em URL (path ou query), pois URLs são registradas em logs e proxies.
+    Buscas por documento usam `POST /clientes/pesquisa`. Logs mascaram CPF/CNPJ e tokens.
+    Ações administrativas geram trilha de auditoria.
+
+    ---
+    ## 4. Ciclo de vida da OS
+
+    | Comando | Perfil | Transição |
+    |---|---|---|
+    | `POST /ordens-servico` | ATENDENTE | → `RECEBIDA` |
+    | `POST /ordens-servico/{id}/diagnostico` | MECANICO | `RECEBIDA` → `EM_DIAGNOSTICO` |
+    | `POST /ordens-servico/{id}/orcamento/envio` | ATENDENTE | `EM_DIAGNOSTICO` → `AGUARDANDO_APROVACAO` |
+    | `POST /portal/ordem-servico/orcamento/decisao` (`APROVAR`) | Cliente | `AGUARDANDO_APROVACAO` → `EM_EXECUCAO` |
+    | `POST /portal/ordem-servico/orcamento/decisao` (`RECUSAR`) | Cliente | orçamento inicial → `FINALIZADA`; adicional → `EM_EXECUCAO` |
+    | `POST /ordens-servico/{id}/itens` em `EM_EXECUCAO` | MECANICO | `EM_EXECUCAO` → `AGUARDANDO_APROVACAO` (orçamento adicional) |
+    | `POST /ordens-servico/{id}/finalizacao` | MECANICO | `EM_EXECUCAO` → `FINALIZADA` |
+    | `POST /ordens-servico/{id}/entrega` | ATENDENTE | `FINALIZADA` → `ENTREGUE` |
+
+    Transição inválida → `409` com `codigo = OS_TRANSICAO_INVALIDA`.
+  contact:
+    name: Grupo SOAT — Fase 1
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://api.oficina.example.com/api/v1
+    description: Produção (somente HTTPS / TLS 1.2+)
+  - url: http://localhost:8080/api/v1
+    description: Ambiente local (docker-compose) — HTTP permitido apenas aqui
+
+tags:
+  - name: Identidade & Acesso
+    description: Autenticação de usuários internos (JWT + refresh token rotativo).
+  - name: Cadastro — Clientes
+    description: Gestão de clientes (dados pessoais protegidos pela LGPD).
+  - name: Cadastro — Veículos
+    description: Gestão de veículos vinculados a clientes.
+  - name: Catálogo — Serviços
+    description: Catálogo de serviços oferecidos pela oficina.
+  - name: Estoque — Peças e Insumos
+    description: Cadastro de peças/insumos e movimentações de estoque.
+  - name: Atendimento — Ordens de Serviço
+    description: Agregado OrdemServico — abertura, itens, orçamento e ciclo de vida.
+  - name: Portal do Cliente
+    description: Autenticação do cliente por OTP, acompanhamento da OS e decisão sobre o orçamento.
+  - name: Métricas
+    description: Indicadores operacionais (tempo médio de execução).
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ═════════════════════════ IDENTIDADE & ACESSO ═════════════════════════
+  /auth/login:
+    post:
+      tags: [Identidade & Acesso]
+      summary: Autentica usuário interno
+      description: |
+        Retorna access token (JWT, 15 min) e refresh token opaco (7 dias, uso único).
+        Credenciais inválidas → sempre a mesma mensagem genérica. 5 falhas seguidas bloqueiam a conta por 15 min.
+      operationId: autenticarUsuario
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/LoginRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Token' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /auth/refresh:
+    post:
+      tags: [Identidade & Acesso]
+      summary: Renova o access token (rotação de refresh token)
+      description: O refresh token usado é invalidado. Reuso de um token já usado revoga toda a sessão (detecção de roubo).
+      operationId: renovarToken
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RefreshTokenRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Token' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /auth/logout:
+    post:
+      tags: [Identidade & Acesso]
+      summary: Encerra a sessão
+      description: Revoga o refresh token e coloca o `jti` do access token na denylist até expirar.
+      operationId: encerrarSessao
+      x-roles: [ADMIN, ATENDENTE, MECANICO]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/RefreshTokenRequest' } } }
+      responses:
+        '204': { description: Sessão encerrada }
+        default: { $ref: '#/components/responses/Erro' }
+
+  # ═════════════════════════ CLIENTES ═════════════════════════
+  /clientes:
+    get:
+      tags: [Cadastro — Clientes]
+      summary: Lista clientes
+      description: Para buscar por CPF/CNPJ use `POST /clientes/pesquisa`.
+      operationId: listarClientes
+      x-roles: [ADMIN, ATENDENTE]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - { name: nome, in: query, description: Filtro parcial por nome, schema: { type: string, minLength: 2, maxLength: 150 } }
+        - { name: sort, in: query, schema: { type: string, enum: [nome, -nome, criadoEm, -criadoEm], default: nome } }
+      responses:
+        '200': { description: Página de clientes, content: { application/json: { schema: { $ref: '#/components/schemas/PaginaClientes' } } } }
+        default: { $ref: '#/components/responses/Erro' }
+    post:
+      tags: [Cadastro — Clientes]
+      summary: Cadastra cliente
+      description: CPF/CNPJ validado pelos dígitos verificadores e único no sistema.
+      operationId: cadastrarCliente
+      x-roles: [ADMIN, ATENDENTE]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ClienteRequest' } } }
+      responses:
+        '201': { description: Cliente criado, content: { application/json: { schema: { $ref: '#/components/schemas/ClienteResponse' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /clientes/pesquisa:
+    post:
+      tags: [Cadastro — Clientes]
+      summary: Localiza cliente por CPF/CNPJ
+      description: Consulta (não altera estado). Usa POST para o documento trafegar no corpo, e não em URL/logs.
+      operationId: pesquisarClientePorDocumento
+      x-roles: [ADMIN, ATENDENTE]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PesquisaClienteRequest' } } }
+      responses:
+        '200': { description: Cliente encontrado, content: { application/json: { schema: { $ref: '#/components/schemas/ClienteResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /clientes/{clienteId}:
+    parameters:
+      - $ref: '#/components/parameters/ClienteId'
+    get:
+      tags: [Cadastro — Clientes]
+      summary: Detalha cliente
+      operationId: obterCliente
+      x-roles: [ADMIN, ATENDENTE]
+      responses:
+        '200': { description: Cliente, content: { application/json: { schema: { $ref: '#/components/schemas/ClienteResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Erro' }
+    put:
+      tags: [Cadastro — Clientes]
+      summary: Atualiza cliente
+      description: O documento (CPF/CNPJ) é imutável após o cadastro.
+      operationId: atualizarCliente
+      x-roles: [ADMIN, ATENDENTE]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/AtualizarClienteRequest' } } }
+      responses:
+        '200': { description: Cliente atualizado, content: { application/json: { schema: { $ref: '#/components/schemas/ClienteResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Erro' }
+    delete:
+      tags: [Cadastro — Clientes]
+      summary: Remove cliente (anonimização LGPD)
+      description: |
+        Exclusão lógica com anonimização; o histórico de OS é preservado sem identificar o titular.
+        Bloqueado (`409 CLIENTE_COM_OS_ABERTA`) se houver OS não entregue.
+      operationId: removerCliente
+      x-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204': { description: Removido }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  # ═════════════════════════ VEÍCULOS ═════════════════════════
+  /veiculos:
+    get:
+      tags: [Cadastro — Veículos]
+      summary: Lista veículos
+      description: Use `clienteId` para listar os veículos de um cliente.
+      operationId: listarVeiculos
+      x-roles: [ADMIN, ATENDENTE, MECANICO]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - { name: placa, in: query, schema: { $ref: '#/components/schemas/Placa' } }
+        - { name: clienteId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Página de veículos, content: { application/json: { schema: { $ref: '#/components/schemas/PaginaVeiculos' } } } }
+        default: { $ref: '#/components/responses/Erro' }
+    post:
+      tags: [Cadastro — Veículos]
+      summary: Cadastra veículo
+      description: Placa no padrão antigo (`ABC1234`) ou Mercosul (`ABC1D23`), em maiúsculas e única.
+      operationId: cadastrarVeiculo
+      x-roles: [ADMIN, ATENDENTE]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VeiculoRequest' } } }
+      responses:
+        '201': { description: Veículo criado, content: { application/json: { schema: { $ref: '#/components/schemas/VeiculoResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /veiculos/{veiculoId}:
+    parameters:
+      - $ref: '#/components/parameters/VeiculoId'
+    get:
+      tags: [Cadastro — Veículos]
+      summary: Detalha veículo
+      operationId: obterVeiculo
+      x-roles: [ADMIN, ATENDENTE, MECANICO]
+      responses:
+        '200': { description: Veículo, content: { application/json: { schema: { $ref: '#/components/schemas/VeiculoResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Erro' }
+    put:
+      tags: [Cadastro — Veículos]
+      summary: Atualiza veículo
+      operationId: atualizarVeiculo
+      x-roles: [ADMIN, ATENDENTE]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VeiculoRequest' } } }
+      responses:
+        '200': { description: Veículo atualizado, content: { application/json: { schema: { $ref: '#/components/schemas/VeiculoResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Erro' }
+    delete:
+      tags: [Cadastro — Veículos]
+      summary: Remove veículo
+      description: Exclusão lógica. Bloqueado (`409 VEICULO_COM_OS_ABERTA`) se houver OS não entregue.
+      operationId: removerVeiculo
+      x-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204': { description: Removido }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  # ═════════════════════════ SERVIÇOS ═════════════════════════
+  /servicos:
+    get:
+      tags: [Catálogo — Serviços]
+      summary: Lista serviços do catálogo
+      operationId: listarServicos
+      x-roles: [ADMIN, ATENDENTE, MECANICO]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - { name: nome, in: query, schema: { type: string, minLength: 2, maxLength: 120 } }
+        - { name: ativo, in: query, schema: { type: boolean, default: true } }
+      responses:
+        '200': { description: Página de serviços, content: { application/json: { schema: { $ref: '#/components/schemas/PaginaServicos' } } } }
+        default: { $ref: '#/components/responses/Erro' }
+    post:
+      tags: [Catálogo — Serviços]
+      summary: Cadastra serviço
+      operationId: cadastrarServico
+      x-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ServicoRequest' } } }
+      responses:
+        '201': { description: Serviço criado, content: { application/json: { schema: { $ref: '#/components/schemas/ServicoResponse' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /servicos/{servicoId}:
+    parameters:
+      - $ref: '#/components/parameters/ServicoId'
+    get:
+      tags: [Catálogo — Serviços]
+      summary: Detalha serviço
+      operationId: obterServico
+      x-roles: [ADMIN, ATENDENTE, MECANICO]
+      responses:
+        '200': { description: Serviço, content: { application/json: { schema: { $ref: '#/components/schemas/ServicoResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Erro' }
+    put:
+      tags: [Catálogo — Serviços]
+      summary: Atualiza serviço
+      description: Mudar o preço não afeta OS já orçadas (o preço fica congelado no item da OS).
+      operationId: atualizarServico
+      x-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ServicoRequest' } } }
+      responses:
+        '200': { description: Serviço atualizado, content: { application/json: { schema: { $ref: '#/components/schemas/ServicoResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Erro' }
+    delete:
+      tags: [Catálogo — Serviços]
+      summary: Inativa serviço
+      description: Exclusão lógica — continua no histórico das OS e deixa de ser ofertado.
+      operationId: inativarServico
+      x-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204': { description: Inativado }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  # ═════════════════════════ ESTOQUE ═════════════════════════
+  /pecas:
+    get:
+      tags: [Estoque — Peças e Insumos]
+      summary: Lista peças e insumos
+      operationId: listarPecas
+      x-roles: [ADMIN, ATENDENTE, MECANICO]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - { name: nome, in: query, schema: { type: string, minLength: 2, maxLength: 120 } }
+        - { name: tipo, in: query, schema: { $ref: '#/components/schemas/TipoItemEstoque' } }
+        - { name: abaixoDoMinimo, in: query, description: Só itens com disponível abaixo do mínimo, schema: { type: boolean } }
+      responses:
+        '200': { description: Página de peças/insumos, content: { application/json: { schema: { $ref: '#/components/schemas/PaginaPecas' } } } }
+        default: { $ref: '#/components/responses/Erro' }
+    post:
+      tags: [Estoque — Peças e Insumos]
+      summary: Cadastra peça ou insumo
+      description: Saldo inicial zero; abasteça com uma movimentação `ENTRADA` (mantém rastreabilidade).
+      operationId: cadastrarPeca
+      x-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PecaRequest' } } }
+      responses:
+        '201': { description: Peça criada, content: { application/json: { schema: { $ref: '#/components/schemas/PecaResponse' } } } }
+        '409': { $ref: '#/components/responses/Conflict' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /pecas/{pecaId}:
+    parameters:
+      - $ref: '#/components/parameters/PecaId'
+    get:
+      tags: [Estoque — Peças e Insumos]
+      summary: Detalha peça/insumo
+      description: '`precoCusto` só é retornado para ADMIN.'
+      operationId: obterPeca
+      x-roles: [ADMIN, ATENDENTE, MECANICO]
+      responses:
+        '200': { description: Peça, content: { application/json: { schema: { $ref: '#/components/schemas/PecaResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Erro' }
+    put:
+      tags: [Estoque — Peças e Insumos]
+      summary: Atualiza dados cadastrais da peça
+      description: Não altera o saldo — para isso use `/pecas/{pecaId}/movimentacoes`.
+      operationId: atualizarPeca
+      x-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/PecaRequest' } } }
+      responses:
+        '200': { description: Peça atualizada, content: { application/json: { schema: { $ref: '#/components/schemas/PecaResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        default: { $ref: '#/components/responses/Erro' }
+    delete:
+      tags: [Estoque — Peças e Insumos]
+      summary: Inativa peça/insumo
+      description: Exclusão lógica. Bloqueado (`409 PECA_COM_RESERVA`) se houver reserva em OS aberta.
+      operationId: inativarPeca
+      x-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '204': { description: Inativada }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /pecas/{pecaId}/movimentacoes:
+    parameters:
+      - $ref: '#/components/parameters/PecaId'
+    get:
+      tags: [Estoque — Peças e Insumos]
+      summary: Histórico de movimentações (livro-razão do estoque)
+      description: Movimentações são imutáveis (append-only); correções são novas movimentações.
+      operationId: listarMovimentacoesEstoque
+      x-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200': { description: Movimentações, content: { application/json: { schema: { $ref: '#/components/schemas/PaginaMovimentacoes' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Erro' }
+    post:
+      tags: [Estoque — Peças e Insumos]
+      summary: Registra movimentação manual de estoque
+      description: |
+        `ENTRADA` soma ao saldo; `SAIDA` subtrai do disponível (`422 ESTOQUE_INSUFICIENTE`);
+        `AJUSTE_INVENTARIO` define o saldo contado (`motivo` obrigatório).
+        `RESERVA`, `LIBERACAO_RESERVA` e `BAIXA_OS` são geradas só pelo agregado OrdemServico.
+      operationId: registrarMovimentacaoEstoque
+      x-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/MovimentacaoEstoqueRequest' } } }
+      responses:
+        '201': { description: Movimentação registrada, content: { application/json: { schema: { $ref: '#/components/schemas/MovimentacaoEstoqueResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  # ═════════════════════════ ORDENS DE SERVIÇO ═════════════════════════
+  /ordens-servico:
+    get:
+      tags: [Atendimento — Ordens de Serviço]
+      summary: Lista ordens de serviço
+      description: |
+        Ordenadas por prioridade: `EM_EXECUCAO` > `AGUARDANDO_APROVACAO` > `EM_DIAGNOSTICO` > `RECEBIDA`,
+        e da mais antiga para a mais nova dentro do mesmo status. `FINALIZADA` e `ENTREGUE` só aparecem
+        se filtradas. Use `clienteId` para o histórico de OS de um cliente.
+      operationId: listarOrdensServico
+      x-roles: [ADMIN, ATENDENTE, MECANICO]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - name: status
+          in: query
+          style: form
+          explode: true
+          schema: { type: array, maxItems: 6, uniqueItems: true, items: { $ref: '#/components/schemas/StatusOS' } }
+        - { name: clienteId, in: query, schema: { type: string, format: uuid } }
+        - { name: placa, in: query, schema: { $ref: '#/components/schemas/Placa' } }
+        - { name: abertaDe, in: query, schema: { type: string, format: date } }
+        - { name: abertaAte, in: query, schema: { type: string, format: date } }
+      responses:
+        '200': { description: Página de OS, content: { application/json: { schema: { $ref: '#/components/schemas/PaginaOrdensServicoResumo' } } } }
+        default: { $ref: '#/components/responses/Erro' }
+    post:
+      tags: [Atendimento — Ordens de Serviço]
+      summary: Abre ordem de serviço
+      description: |
+        1. Identifica o cliente pelo CPF/CNPJ (cadastra com `novoCliente` se não existir).
+        2. Usa `veiculoId` **ou** cadastra `novoVeiculo` vinculado ao cliente.
+        3. Inclui os itens (peças reservadas no estoque) e gera o orçamento com preços congelados.
+
+        Status inicial `RECEBIDA`; o cliente recebe por e-mail o código de acompanhamento.
+        Tudo em uma única transação.
+      operationId: abrirOrdemServico
+      x-roles: [ADMIN, ATENDENTE]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AbrirOrdemServicoRequest' }
+            example:
+              documentoCliente: '52998224725'
+              novoCliente: { nome: João da Silva, email: joao@email.com, telefone: '+5511999998888' }
+              novoVeiculo: { placa: ABC1D23, marca: Volkswagen, modelo: Gol 1.6, ano: 2019 }
+              itens:
+                - { tipo: SERVICO, referenciaId: 3fa85f64-5717-4562-b3fc-2c963f66afa6, quantidade: 1 }
+                - { tipo: PECA, referenciaId: 7c9e6679-7425-40de-944b-e07fc1f90ae7, quantidade: 4 }
+              relatoCliente: Barulho na suspensão dianteira
+      responses:
+        '201': { description: OS aberta, content: { application/json: { schema: { $ref: '#/components/schemas/OrdemServicoResponse' } } } }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /ordens-servico/{osId}:
+    parameters:
+      - $ref: '#/components/parameters/OsId'
+    get:
+      tags: [Atendimento — Ordens de Serviço]
+      summary: Detalha ordem de serviço
+      description: Inclui itens, orçamento vigente e linha do tempo de status.
+      operationId: obterOrdemServico
+      x-roles: [ADMIN, ATENDENTE, MECANICO]
+      responses:
+        '200': { $ref: '#/components/responses/OrdemServico' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /ordens-servico/{osId}/itens:
+    parameters:
+      - $ref: '#/components/parameters/OsId'
+    post:
+      tags: [Atendimento — Ordens de Serviço]
+      summary: Inclui serviço ou peça na OS
+      description: |
+        Em `RECEBIDA` e `EM_DIAGNOSTICO` o orçamento é recalculado. Em `EM_EXECUCAO` gera **orçamento adicional**
+        e a OS volta para `AGUARDANDO_APROVACAO`. Peças são reservadas no estoque (`422 ESTOQUE_INSUFICIENTE`).
+      operationId: incluirItemNaOrdem
+      x-roles: [ADMIN, ATENDENTE, MECANICO]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/ItemOrdemRequest' } } }
+      responses:
+        '201': { $ref: '#/components/responses/OrdemServico' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /ordens-servico/{osId}/itens/{itemId}:
+    parameters:
+      - $ref: '#/components/parameters/OsId'
+      - $ref: '#/components/parameters/ItemId'
+    delete:
+      tags: [Atendimento — Ordens de Serviço]
+      summary: Remove item da OS
+      description: Só em `RECEBIDA` ou `EM_DIAGNOSTICO`. Se for peça, libera a reserva no estoque.
+      operationId: removerItemDaOrdem
+      x-roles: [ADMIN, ATENDENTE, MECANICO]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200': { $ref: '#/components/responses/OrdemServico' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /ordens-servico/{osId}/diagnostico:
+    parameters:
+      - $ref: '#/components/parameters/OsId'
+    post:
+      tags: [Atendimento — Ordens de Serviço]
+      summary: Inicia diagnóstico
+      description: '`RECEBIDA` → `EM_DIAGNOSTICO`.'
+      operationId: iniciarDiagnostico
+      x-roles: [ADMIN, MECANICO]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        content: { application/json: { schema: { $ref: '#/components/schemas/ObservacaoRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/OrdemServico' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /ordens-servico/{osId}/orcamento/envio:
+    parameters:
+      - $ref: '#/components/parameters/OsId'
+    post:
+      tags: [Atendimento — Ordens de Serviço]
+      summary: Envia orçamento ao cliente
+      description: |
+        `EM_DIAGNOSTICO` → `AGUARDANDO_APROVACAO`. Congela os valores e notifica o cliente.
+        Exige ao menos um serviço (`422 ORCAMENTO_SEM_ITENS`).
+      operationId: enviarOrcamento
+      x-roles: [ADMIN, ATENDENTE]
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200': { $ref: '#/components/responses/OrdemServico' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /ordens-servico/{osId}/finalizacao:
+    parameters:
+      - $ref: '#/components/parameters/OsId'
+    post:
+      tags: [Atendimento — Ordens de Serviço]
+      summary: Finaliza execução
+      description: '`EM_EXECUCAO` → `FINALIZADA`. Registra o fim da execução (base das métricas).'
+      operationId: finalizarOrdemServico
+      x-roles: [ADMIN, MECANICO]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      requestBody:
+        content: { application/json: { schema: { $ref: '#/components/schemas/ObservacaoRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/OrdemServico' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /ordens-servico/{osId}/entrega:
+    parameters:
+      - $ref: '#/components/parameters/OsId'
+    post:
+      tags: [Atendimento — Ordens de Serviço]
+      summary: Registra entrega do veículo
+      description: '`FINALIZADA` → `ENTREGUE`.'
+      operationId: entregarVeiculo
+      x-roles: [ADMIN, ATENDENTE]
+      parameters:
+        - $ref: '#/components/parameters/IfMatch'
+      responses:
+        '200': { $ref: '#/components/responses/OrdemServico' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  # ═════════════════════════ PORTAL DO CLIENTE ═════════════════════════
+  /portal/autenticacao:
+    post:
+      tags: [Portal do Cliente]
+      summary: Solicita código de acesso (OTP)
+      description: |
+        O cliente informa o código de acompanhamento e o CPF/CNPJ. Se o par for válido, um OTP de 6 dígitos
+        (válido por 5 min) vai para o contato cadastrado.
+        **Anti-enumeração:** responde sempre `202` com o mesmo corpo. Limite de 3 pedidos por OS a cada 15 min.
+      operationId: solicitarAcessoCliente
+      security: []
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/SolicitarAcessoRequest' } } }
+      responses:
+        '202': { description: Solicitação aceita (resposta idêntica em qualquer caso), content: { application/json: { schema: { $ref: '#/components/schemas/DesafioAcessoResponse' } } } }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /portal/autenticacao/{desafioId}/verificacao:
+    post:
+      tags: [Portal do Cliente]
+      summary: Valida o OTP e emite token do cliente
+      description: |
+        Emite JWT de escopo restrito (`scope=portal:os`, `sub` = id da OS, 30 min), válido só para aquela OS.
+        Após 5 tentativas erradas o desafio é invalidado.
+      operationId: verificarAcessoCliente
+      security: []
+      parameters:
+        - { name: desafioId, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/VerificarAcessoRequest' } } }
+      responses:
+        '200': { description: Token do cliente, content: { application/json: { schema: { $ref: '#/components/schemas/TokenClienteResponse' } } } }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /portal/ordem-servico:
+    get:
+      tags: [Portal do Cliente]
+      summary: Cliente acompanha a OS
+      description: |
+        A OS vem do token (sem ID na URL — elimina BOLA). Dados pessoais mascarados;
+        custos internos e usuários da oficina não são expostos.
+      operationId: acompanharOrdemServico
+      security:
+        - clienteBearerAuth: []
+      responses:
+        '200': { $ref: '#/components/responses/Acompanhamento' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /portal/ordem-servico/orcamento/decisao:
+    post:
+      tags: [Portal do Cliente]
+      summary: Cliente aprova ou recusa o orçamento
+      description: |
+        - `APROVAR`: `AGUARDANDO_APROVACAO` → `EM_EXECUCAO`; baixa as peças reservadas e marca o início da execução.
+        - `RECUSAR`: orçamento **inicial** → OS `FINALIZADA` sem execução e reservas liberadas;
+          orçamento **adicional** → itens adicionais descartados e OS volta a `EM_EXECUCAO`.
+
+        Exige a `versaoOrcamento` exibida ao cliente: se a oficina mudou o orçamento nesse meio-tempo,
+        retorna `409 ORCAMENTO_DESATUALIZADO`. A decisão é registrada com data/hora, IP e user-agent (evidência).
+      operationId: decidirOrcamento
+      security:
+        - clienteBearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: '#/components/schemas/DecisaoOrcamentoRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/Acompanhamento' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  # ═════════════════════════ MÉTRICAS ═════════════════════════
+  /metricas/tempo-medio-execucao:
+    get:
+      tags: [Métricas]
+      summary: Tempo médio de execução dos serviços
+      description: |
+        Sobre OS `FINALIZADA`/`ENTREGUE` no período (máx. 366 dias): execução (`EM_EXECUCAO` → `FINALIZADA`),
+        aprovação (`AGUARDANDO_APROVACAO` → `EM_EXECUCAO`) e ciclo total (`RECEBIDA` → `ENTREGUE`), por serviço.
+      operationId: calcularTempoMedioExecucao
+      x-roles: [ADMIN]
+      parameters:
+        - { name: dataInicio, in: query, required: true, schema: { type: string, format: date } }
+        - { name: dataFim, in: query, required: true, schema: { type: string, format: date } }
+        - { name: servicoId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200': { description: Métricas, content: { application/json: { schema: { $ref: '#/components/schemas/MetricaTempoExecucaoResponse' } } } }
+        default: { $ref: '#/components/responses/Erro' }
+
+# ═══════════════════════════════════════════════════════════════════════
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Token de **usuário interno** emitido em `POST /auth/login`.
+        Assinatura assimétrica **RS256** (chave privada fora do repositório, via variável de ambiente/secret),
+        validade de 15 min. Claims: `sub` (id do usuário), `roles`, `iss`, `aud=oficina-api`, `iat`, `exp`, `jti`.
+        `iss`, `aud`, `exp` e o algoritmo são sempre validados (`alg=none` rejeitado).
+        O perfil exigido por operação está em `x-roles`.
+    clienteBearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        Token do **cliente** emitido em `POST /portal/autenticacao/{desafioId}/verificacao`.
+        `aud=oficina-portal`, `scope=portal:os`, `sub` = id da OS, validade de 30 min.
+        Não é aceito nas rotas administrativas (e vice-versa).
+
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: |
+        UUID gerado pelo cliente. Reenvios com a mesma chave (por 24 h) retornam a resposta original
+        sem reexecutar o caso de uso. Mesma chave com corpo diferente → `422 IDEMPOTENCIA_CONFLITANTE`.
+      schema: { type: string, format: uuid }
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: ETag obtido no último `GET` do recurso (concorrência otimista).
+      schema: { type: string, maxLength: 64 }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 0, maximum: 10000, default: 0 }
+    Size:
+      name: size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    ClienteId:
+      name: clienteId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    VeiculoId:
+      name: veiculoId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ServicoId:
+      name: servicoId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    PecaId:
+      name: pecaId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OsId:
+      name: osId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ItemId:
+      name: itemId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+
+  responses:
+    Token:
+      description: Par de tokens
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/TokenResponse' }
+    OrdemServico:
+      description: OS no estado atual (após o comando, quando houver)
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/OrdemServicoResponse' }
+    Acompanhamento:
+      description: Visão da OS para o cliente
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/AcompanhamentoOSResponse' }
+    NotFound:
+      description: Recurso não encontrado (também quando existe mas o chamador não pode vê-lo)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+    Conflict:
+      description: Conflito com o estado atual (duplicidade, transição inválida, orçamento desatualizado)
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://api.oficina.example.com/problems/os-transicao-invalida
+            title: Transição de status inválida
+            status: 409
+            codigo: OS_TRANSICAO_INVALIDA
+            detail: Não é possível finalizar uma OS em AGUARDANDO_APROVACAO
+            traceId: 1b4e28ba-2fa1-11d2-883f-0016d3cca427
+    UnprocessableEntity:
+      description: Regra de negócio violada
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://api.oficina.example.com/problems/estoque-insuficiente
+            title: Estoque insuficiente
+            status: 422
+            codigo: ESTOQUE_INSUFICIENTE
+            detail: 'Disponível: 2; solicitado: 4'
+            traceId: 1b4e28ba-2fa1-11d2-883f-0016d3cca427
+    Erro:
+      description: |
+        Erros genéricos (RFC 9457): `400` validação, `401` não autenticado, `403` perfil/escopo sem permissão,
+        `412`/`428` `If-Match` desatualizado/ausente, `415` Content-Type inválido, `429` limite de requisições,
+        `500` erro interno (nunca expõe stack trace, SQL ou infraestrutura — só o `traceId`).
+      content:
+        application/problem+json:
+          schema: { $ref: '#/components/schemas/Problem' }
+          example:
+            type: https://api.oficina.example.com/problems/validacao
+            title: Dados inválidos
+            status: 400
+            codigo: VALIDACAO
+            detail: Um ou mais campos são inválidos
+            traceId: 1b4e28ba-2fa1-11d2-883f-0016d3cca427
+            erros:
+              - { campo: documento, mensagem: CPF/CNPJ inválido }
+              - { campo: placa, mensagem: 'Placa deve seguir o padrão ABC1234 ou ABC1D23' }
+
+  schemas:
+    # ─────────────── Value Objects (Domain) ───────────────
+    Documento:
+      type: string
+      description: 'Value Object: CPF (11) ou CNPJ (14 dígitos), somente números, validado por dígitos verificadores.'
+      pattern: '^(\d{11}|\d{14})$'
+      minLength: 11
+      maxLength: 14
+      example: '52998224725'
+    DocumentoMascarado:
+      type: string
+      maxLength: 20
+      example: '***.982.247-**'
+    Placa:
+      type: string
+      description: 'Value Object: padrão antigo (ABC1234) ou Mercosul (ABC1D23), maiúsculas, sem hífen.'
+      pattern: '^[A-Z]{3}[0-9][A-Z0-9][0-9]{2}$'
+      minLength: 7
+      maxLength: 7
+      example: ABC1D23
+    Dinheiro:
+      type: string
+      description: 'Value Object: valor em BRL como decimal com 2 casas (evita erro de ponto flutuante).'
+      pattern: '^\d{1,9}\.\d{2}$'
+      maxLength: 12
+      example: '149.90'
+    Quantidade:
+      type: number
+      description: 'Value Object: quantidade positiva (até 3 casas decimais para insumos a granel).'
+      minimum: 0.001
+      maximum: 100000
+      multipleOf: 0.001
+      example: 4
+    Email:
+      type: string
+      format: email
+      maxLength: 254
+    Telefone:
+      type: string
+      description: Formato E.164
+      pattern: '^\+?[1-9]\d{9,14}$'
+      maxLength: 16
+    TextoCurto:
+      type: string
+      maxLength: 150
+      pattern: '^[^<>]*$'
+    TextoLivre:
+      type: string
+      maxLength: 1000
+      description: Texto livre; armazenado como texto puro e sempre escapado na saída (anti-XSS).
+
+    # ─────────────── Enums de domínio ───────────────
+    StatusOS:
+      type: string
+      enum: [RECEBIDA, EM_DIAGNOSTICO, AGUARDANDO_APROVACAO, EM_EXECUCAO, FINALIZADA, ENTREGUE]
+    StatusOrcamento:
+      type: string
+      enum: [RASCUNHO, ENVIADO, APROVADO, RECUSADO]
+    TipoDocumento:
+      type: string
+      enum: [CPF, CNPJ]
+    TipoItemEstoque:
+      type: string
+      enum: [PECA, INSUMO]
+    UnidadeMedida:
+      type: string
+      enum: [UNIDADE, LITRO, KG, METRO, KIT]
+    TipoMovimentacao:
+      type: string
+      enum: [ENTRADA, SAIDA, AJUSTE_INVENTARIO, RESERVA, LIBERACAO_RESERVA, BAIXA_OS]
+    CodigoErro:
+      type: string
+      description: Código estável de erro (contrato para o front-end; independente da mensagem).
+      enum:
+        - VALIDACAO
+        - NAO_AUTENTICADO
+        - ACESSO_NEGADO
+        - RECURSO_NAO_ENCONTRADO
+        - DOCUMENTO_INVALIDO
+        - DOCUMENTO_JA_CADASTRADO
+        - PLACA_INVALIDA
+        - PLACA_JA_CADASTRADA
+        - CLIENTE_COM_OS_ABERTA
+        - VEICULO_COM_OS_ABERTA
+        - VEICULO_NAO_PERTENCE_AO_CLIENTE
+        - SERVICO_INATIVO
+        - PECA_INATIVA
+        - PECA_COM_RESERVA
+        - CODIGO_PECA_DUPLICADO
+        - ESTOQUE_INSUFICIENTE
+        - OS_TRANSICAO_INVALIDA
+        - OS_ITEM_NAO_EDITAVEL
+        - ORCAMENTO_SEM_ITENS
+        - ORCAMENTO_DESATUALIZADO
+        - VERSAO_DESATUALIZADA
+        - IF_MATCH_OBRIGATORIO
+        - IDEMPOTENCIA_CONFLITANTE
+        - LIMITE_REQUISICOES
+        - ERRO_INTERNO
+
+    # ─────────────── Identidade & Acesso ───────────────
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, senha]
+      properties:
+        email: { $ref: '#/components/schemas/Email' }
+        senha:
+          type: string
+          format: password
+          writeOnly: true
+          minLength: 12
+          maxLength: 128
+          description: Armazenada com hash **Argon2id/BCrypt**; nunca registrada em log.
+    RefreshTokenRequest:
+      type: object
+      additionalProperties: false
+      required: [refreshToken]
+      properties:
+        refreshToken: { type: string, minLength: 32, maxLength: 512, writeOnly: true }
+    TokenResponse:
+      type: object
+      required: [accessToken, tokenType, expiresIn, refreshToken, refreshExpiresIn]
+      properties:
+        accessToken: { type: string, maxLength: 4096 }
+        tokenType: { type: string, enum: [Bearer] }
+        expiresIn: { type: integer, example: 900 }
+        refreshToken: { type: string, maxLength: 512 }
+        refreshExpiresIn: { type: integer, example: 604800 }
+
+    # ─────────────── Clientes ───────────────
+    ClienteRequest:
+      type: object
+      additionalProperties: false
+      required: [documento, nome, email]
+      properties:
+        documento: { $ref: '#/components/schemas/Documento' }
+        nome: { $ref: '#/components/schemas/TextoCurto' }
+        email: { $ref: '#/components/schemas/Email' }
+        telefone: { $ref: '#/components/schemas/Telefone' }
+        endereco: { $ref: '#/components/schemas/EnderecoDTO' }
+    AtualizarClienteRequest:
+      type: object
+      additionalProperties: false
+      required: [nome, email]
+      properties:
+        nome: { $ref: '#/components/schemas/TextoCurto' }
+        email: { $ref: '#/components/schemas/Email' }
+        telefone: { $ref: '#/components/schemas/Telefone' }
+        endereco: { $ref: '#/components/schemas/EnderecoDTO' }
+    PesquisaClienteRequest:
+      type: object
+      additionalProperties: false
+      required: [documento]
+      properties:
+        documento: { $ref: '#/components/schemas/Documento' }
+    ClienteResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tipoDocumento: { $ref: '#/components/schemas/TipoDocumento' }
+        documento: { $ref: '#/components/schemas/Documento' }
+        nome: { type: string, maxLength: 150 }
+        email: { $ref: '#/components/schemas/Email' }
+        telefone: { $ref: '#/components/schemas/Telefone' }
+        endereco: { $ref: '#/components/schemas/EnderecoDTO' }
+        criadoEm: { type: string, format: date-time }
+        atualizadoEm: { type: string, format: date-time }
+    ClienteResumoResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string, maxLength: 150 }
+        documentoMascarado: { $ref: '#/components/schemas/DocumentoMascarado' }
+    EnderecoDTO:
+      type: object
+      additionalProperties: false
+      properties:
+        logradouro: { type: string, maxLength: 150 }
+        numero: { type: string, maxLength: 10 }
+        complemento: { type: string, maxLength: 60 }
+        bairro: { type: string, maxLength: 80 }
+        cidade: { type: string, maxLength: 80 }
+        uf: { type: string, pattern: '^[A-Z]{2}$' }
+        cep: { type: string, pattern: '^\d{8}$' }
+
+    # ─────────────── Veículos ───────────────
+    VeiculoRequest:
+      type: object
+      additionalProperties: false
+      required: [placa, marca, modelo, ano, clienteId]
+      properties:
+        placa: { $ref: '#/components/schemas/Placa' }
+        marca: { type: string, minLength: 2, maxLength: 60, example: Volkswagen }
+        modelo: { type: string, minLength: 1, maxLength: 80, example: Gol 1.6 }
+        ano: { type: integer, minimum: 1950, maximum: 2100, example: 2019, description: 'Não pode ser maior que ano atual + 1' }
+        cor: { type: string, maxLength: 30 }
+        clienteId: { type: string, format: uuid }
+    NovoVeiculoRequest:
+      type: object
+      additionalProperties: false
+      required: [placa, marca, modelo, ano]
+      properties:
+        placa: { $ref: '#/components/schemas/Placa' }
+        marca: { type: string, minLength: 2, maxLength: 60 }
+        modelo: { type: string, minLength: 1, maxLength: 80 }
+        ano: { type: integer, minimum: 1950, maximum: 2100 }
+        cor: { type: string, maxLength: 30 }
+    VeiculoResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        placa: { $ref: '#/components/schemas/Placa' }
+        marca: { type: string }
+        modelo: { type: string }
+        ano: { type: integer }
+        cor: { type: string }
+        clienteId: { type: string, format: uuid }
+        criadoEm: { type: string, format: date-time }
+        atualizadoEm: { type: string, format: date-time }
+    VeiculoResumoResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        placa: { $ref: '#/components/schemas/Placa' }
+        marca: { type: string }
+        modelo: { type: string }
+        ano: { type: integer }
+
+    # ─────────────── Serviços ───────────────
+    ServicoRequest:
+      type: object
+      additionalProperties: false
+      required: [nome, preco, tempoEstimadoMinutos]
+      properties:
+        nome: { type: string, minLength: 2, maxLength: 120, example: Troca de óleo }
+        descricao: { type: string, maxLength: 500 }
+        preco: { $ref: '#/components/schemas/Dinheiro' }
+        tempoEstimadoMinutos: { type: integer, minimum: 1, maximum: 10080, example: 45 }
+        ativo: { type: boolean, default: true }
+    ServicoResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        nome: { type: string }
+        descricao: { type: string }
+        preco: { $ref: '#/components/schemas/Dinheiro' }
+        tempoEstimadoMinutos: { type: integer }
+        ativo: { type: boolean }
+        criadoEm: { type: string, format: date-time }
+        atualizadoEm: { type: string, format: date-time }
+
+    # ─────────────── Estoque ───────────────
+    PecaRequest:
+      type: object
+      additionalProperties: false
+      required: [codigo, nome, tipo, unidade, precoVenda, estoqueMinimo]
+      properties:
+        codigo: { type: string, pattern: '^[A-Z0-9-]{3,30}$', description: SKU interno único, example: FLT-OLEO-001 }
+        nome: { type: string, minLength: 2, maxLength: 120, example: Filtro de óleo }
+        descricao: { type: string, maxLength: 500 }
+        tipo: { $ref: '#/components/schemas/TipoItemEstoque' }
+        unidade: { $ref: '#/components/schemas/UnidadeMedida' }
+        fabricante: { type: string, maxLength: 80 }
+        precoCusto: { $ref: '#/components/schemas/Dinheiro' }
+        precoVenda: { $ref: '#/components/schemas/Dinheiro' }
+        estoqueMinimo: { type: number, minimum: 0, maximum: 100000 }
+    PecaResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        codigo: { type: string }
+        nome: { type: string }
+        descricao: { type: string }
+        tipo: { $ref: '#/components/schemas/TipoItemEstoque' }
+        unidade: { $ref: '#/components/schemas/UnidadeMedida' }
+        fabricante: { type: string }
+        precoCusto:
+          type: string
+          allOf: [{ $ref: '#/components/schemas/Dinheiro' }]
+          nullable: true
+          description: Omitido (null) para perfis diferentes de ADMIN.
+        precoVenda: { $ref: '#/components/schemas/Dinheiro' }
+        estoqueMinimo: { type: number }
+        saldoFisico: { type: number, description: Quantidade física em estoque }
+        saldoReservado: { type: number, description: Reservado para OS ainda não aprovadas }
+        saldoDisponivel: { type: number, description: físico − reservado }
+        abaixoDoMinimo: { type: boolean }
+        ativo: { type: boolean }
+        atualizadoEm: { type: string, format: date-time }
+    MovimentacaoEstoqueRequest:
+      type: object
+      additionalProperties: false
+      required: [tipo, quantidade]
+      properties:
+        tipo: { type: string, enum: [ENTRADA, SAIDA, AJUSTE_INVENTARIO] }
+        quantidade: { $ref: '#/components/schemas/Quantidade' }
+        motivo: { type: string, maxLength: 255, description: Obrigatório para AJUSTE_INVENTARIO e SAIDA }
+        custoUnitario: { $ref: '#/components/schemas/Dinheiro' }
+        documentoFiscal: { type: string, maxLength: 60, example: NF 12345 }
+    MovimentacaoEstoqueResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        pecaId: { type: string, format: uuid }
+        tipo: { $ref: '#/components/schemas/TipoMovimentacao' }
+        quantidade: { type: number }
+        saldoFisicoApos: { type: number }
+        motivo: { type: string }
+        ordemServicoId: { type: string, format: uuid, nullable: true }
+        realizadoPor: { type: string, format: uuid, description: Id do usuário (auditoria) }
+        realizadoEm: { type: string, format: date-time }
+
+    # ─────────────── Ordem de Serviço (agregado) ───────────────
+    TipoItemOS:
+      type: string
+      enum: [SERVICO, PECA]
+    ItemOrdemRequest:
+      type: object
+      additionalProperties: false
+      required: [tipo, referenciaId, quantidade]
+      description: Serviço do catálogo ou peça/insumo do estoque. Para `SERVICO` a quantidade deve ser inteira (1–50).
+      properties:
+        tipo: { $ref: '#/components/schemas/TipoItemOS' }
+        referenciaId: { type: string, format: uuid, description: '`servicoId` ou `pecaId`, conforme o `tipo`' }
+        quantidade: { $ref: '#/components/schemas/Quantidade' }
+        observacao: { type: string, maxLength: 255 }
+    NovoClienteRequest:
+      type: object
+      additionalProperties: false
+      required: [nome, email]
+      properties:
+        nome: { $ref: '#/components/schemas/TextoCurto' }
+        email: { $ref: '#/components/schemas/Email' }
+        telefone: { $ref: '#/components/schemas/Telefone' }
+    AbrirOrdemServicoRequest:
+      type: object
+      additionalProperties: false
+      required: [documentoCliente, itens]
+      description: Informe exatamente um entre `veiculoId` e `novoVeiculo`. `itens` deve conter ao menos um serviço.
+      properties:
+        documentoCliente: { $ref: '#/components/schemas/Documento' }
+        novoCliente: { $ref: '#/components/schemas/NovoClienteRequest' }
+        veiculoId: { type: string, format: uuid }
+        novoVeiculo: { $ref: '#/components/schemas/NovoVeiculoRequest' }
+        itens:
+          type: array
+          minItems: 1
+          maxItems: 80
+          items: { $ref: '#/components/schemas/ItemOrdemRequest' }
+        relatoCliente: { $ref: '#/components/schemas/TextoLivre' }
+    ObservacaoRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        observacao: { $ref: '#/components/schemas/TextoLivre' }
+    ItemOSResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        tipo: { $ref: '#/components/schemas/TipoItemOS' }
+        referenciaId: { type: string, format: uuid }
+        nome: { type: string }
+        quantidade: { type: number }
+        precoUnitario: { $ref: '#/components/schemas/Dinheiro' }
+        subtotal: { $ref: '#/components/schemas/Dinheiro' }
+        adicional: { type: boolean, description: Incluído após a aprovação inicial }
+    OrcamentoResponse:
+      type: object
+      properties:
+        versao: { type: integer, minimum: 1, description: Incrementa a cada alteração/orçamento adicional }
+        status: { $ref: '#/components/schemas/StatusOrcamento' }
+        totalServicos: { $ref: '#/components/schemas/Dinheiro' }
+        totalPecas: { $ref: '#/components/schemas/Dinheiro' }
+        valorTotal: { $ref: '#/components/schemas/Dinheiro' }
+        tempoEstimadoMinutos: { type: integer }
+        geradoEm: { type: string, format: date-time }
+        enviadoEm: { type: string, format: date-time, nullable: true }
+        decididoEm: { type: string, format: date-time, nullable: true }
+    HistoricoStatusResponse:
+      type: object
+      properties:
+        statusAnterior:
+          type: string
+          allOf: [{ $ref: '#/components/schemas/StatusOS' }]
+          nullable: true
+        statusNovo: { $ref: '#/components/schemas/StatusOS' }
+        ocorridoEm: { type: string, format: date-time }
+        origem: { type: string, enum: [USUARIO, CLIENTE, SISTEMA] }
+        usuarioId: { type: string, format: uuid, nullable: true }
+        observacao: { type: string }
+    OrdemServicoResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        numero: { type: string, example: '2026-000123', description: Número legível (não usado como identificador de API) }
+        status: { $ref: '#/components/schemas/StatusOS' }
+        cliente: { $ref: '#/components/schemas/ClienteResumoResponse' }
+        veiculo: { $ref: '#/components/schemas/VeiculoResumoResponse' }
+        itens:
+          type: array
+          maxItems: 100
+          items: { $ref: '#/components/schemas/ItemOSResponse' }
+        orcamento: { $ref: '#/components/schemas/OrcamentoResponse' }
+        historico:
+          type: array
+          maxItems: 100
+          description: Linha do tempo de status (auditoria).
+          items: { $ref: '#/components/schemas/HistoricoStatusResponse' }
+        relatoCliente: { type: string }
+        abertaEm: { type: string, format: date-time }
+        inicioExecucaoEm: { type: string, format: date-time, nullable: true }
+        finalizadaEm: { type: string, format: date-time, nullable: true }
+        entregueEm: { type: string, format: date-time, nullable: true }
+        acoesPermitidas:
+          type: array
+          description: Comandos válidos no status atual (derivado do agregado — o front não replica regra de negócio).
+          items:
+            type: string
+            enum: [INCLUIR_ITEM, REMOVER_ITEM, INICIAR_DIAGNOSTICO, ENVIAR_ORCAMENTO, FINALIZAR, ENTREGAR]
+    OrdemServicoResumoResponse:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        numero: { type: string }
+        status: { $ref: '#/components/schemas/StatusOS' }
+        clienteNome: { type: string }
+        placa: { $ref: '#/components/schemas/Placa' }
+        valorTotal: { $ref: '#/components/schemas/Dinheiro' }
+        abertaEm: { type: string, format: date-time }
+
+    # ─────────────── Portal do Cliente ───────────────
+    SolicitarAcessoRequest:
+      type: object
+      additionalProperties: false
+      required: [codigoAcompanhamento, documento]
+      properties:
+        codigoAcompanhamento:
+          type: string
+          pattern: '^OS-[A-HJ-NP-Z2-9]{10}$'
+          description: Código aleatório (≈ 50 bits de entropia) enviado ao cliente na abertura da OS.
+          example: OS-7K2M9QXAHT
+        documento: { $ref: '#/components/schemas/Documento' }
+    DesafioAcessoResponse:
+      type: object
+      properties:
+        desafioId: { type: string, format: uuid }
+        expiraEm: { type: string, format: date-time }
+        mensagem:
+          type: string
+          example: Se os dados estiverem corretos, você receberá um código no contato cadastrado.
+    VerificarAcessoRequest:
+      type: object
+      additionalProperties: false
+      required: [codigo]
+      properties:
+        codigo: { type: string, pattern: '^\d{6}$', writeOnly: true }
+    TokenClienteResponse:
+      type: object
+      properties:
+        accessToken: { type: string, maxLength: 4096 }
+        tokenType: { type: string, enum: [Bearer] }
+        expiresIn: { type: integer, example: 1800 }
+    DecisaoOrcamentoRequest:
+      type: object
+      additionalProperties: false
+      required: [decisao, versaoOrcamento]
+      properties:
+        decisao: { type: string, enum: [APROVAR, RECUSAR] }
+        versaoOrcamento:
+          type: integer
+          minimum: 1
+          description: Versão do orçamento exibida ao cliente (garante que ele decide sobre o valor que viu).
+        comentario: { type: string, maxLength: 500 }
+    AcompanhamentoOSResponse:
+      type: object
+      description: Visão do cliente — sem custos internos, sem ids de usuários, dados pessoais mascarados.
+      properties:
+        numero: { type: string }
+        status: { $ref: '#/components/schemas/StatusOS' }
+        descricaoStatus: { type: string, example: Seu veículo está em execução }
+        clienteNome: { type: string }
+        documentoMascarado: { $ref: '#/components/schemas/DocumentoMascarado' }
+        veiculo:
+          type: object
+          properties:
+            placaMascarada: { type: string, example: ABC-**23 }
+            marca: { type: string }
+            modelo: { type: string }
+        orcamento:
+          type: object
+          properties:
+            versao: { type: integer }
+            status: { $ref: '#/components/schemas/StatusOrcamento' }
+            valorTotal: { $ref: '#/components/schemas/Dinheiro' }
+            itens:
+              type: array
+              items:
+                type: object
+                properties:
+                  descricao: { type: string }
+                  tipo: { type: string, enum: [SERVICO, PECA] }
+                  quantidade: { type: number }
+                  subtotal: { $ref: '#/components/schemas/Dinheiro' }
+                  adicional: { type: boolean }
+        aguardandoAprovacao: { type: boolean }
+        linhaDoTempo:
+          type: array
+          items:
+            type: object
+            properties:
+              status: { $ref: '#/components/schemas/StatusOS' }
+              ocorridoEm: { type: string, format: date-time }
+        previsaoConclusao: { type: string, format: date-time, nullable: true }
+
+    # ─────────────── Métricas ───────────────
+    MetricaTempoExecucaoResponse:
+      type: object
+      properties:
+        periodoInicio: { type: string, format: date }
+        periodoFim: { type: string, format: date }
+        totalOrdensConsideradas: { type: integer, example: 42 }
+        tempoMedioExecucaoMinutos: { type: number, example: 135.5 }
+        tempoMedioAprovacaoMinutos: { type: number, example: 240.0 }
+        tempoMedioCicloTotalMinutos: { type: number, example: 1720.0 }
+        porServico:
+          type: array
+          items:
+            type: object
+            properties:
+              servicoId: { type: string, format: uuid }
+              nome: { type: string }
+              quantidadeOS: { type: integer }
+              tempoEstimadoMinutos: { type: integer }
+              tempoMedioRealMinutos: { type: number }
+              desvioPercentual: { type: number, description: '(real − estimado) / estimado × 100' }
+
+    # ─────────────── Paginação ───────────────
+    PaginaMeta:
+      type: object
+      properties:
+        page: { type: integer }
+        size: { type: integer }
+        totalElements: { type: integer }
+        totalPages: { type: integer }
+    PaginaClientes:
+      allOf:
+        - $ref: '#/components/schemas/PaginaMeta'
+        - type: object
+          properties:
+            content: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/ClienteResponse' } }
+    PaginaVeiculos:
+      allOf:
+        - $ref: '#/components/schemas/PaginaMeta'
+        - type: object
+          properties:
+            content: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/VeiculoResponse' } }
+    PaginaServicos:
+      allOf:
+        - $ref: '#/components/schemas/PaginaMeta'
+        - type: object
+          properties:
+            content: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/ServicoResponse' } }
+    PaginaPecas:
+      allOf:
+        - $ref: '#/components/schemas/PaginaMeta'
+        - type: object
+          properties:
+            content: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/PecaResponse' } }
+    PaginaMovimentacoes:
+      allOf:
+        - $ref: '#/components/schemas/PaginaMeta'
+        - type: object
+          properties:
+            content: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/MovimentacaoEstoqueResponse' } }
+    PaginaOrdensServicoResumo:
+      allOf:
+        - $ref: '#/components/schemas/PaginaMeta'
+        - type: object
+          properties:
+            content: { type: array, maxItems: 100, items: { $ref: '#/components/schemas/OrdemServicoResumoResponse' } }
+
+    # ─────────────── Erro (RFC 9457) ───────────────
+    Problem:
+      type: object
+      required: [type, title, status, codigo, traceId]
+      properties:
+        type: { type: string, format: uri-reference, maxLength: 255 }
+        title: { type: string, maxLength: 150 }
+        status: { type: integer, minimum: 400, maximum: 599 }
+        codigo: { $ref: '#/components/schemas/CodigoErro' }
+        detail: { type: string, maxLength: 500 }
+        instance: { type: string, maxLength: 255 }
+        traceId: { type: string, format: uuid, description: Mesmo valor de X-Request-Id — use-o para localizar o log }
+        timestamp: { type: string, format: date-time }
+        erros:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            properties:
+              campo: { type: string, maxLength: 100 }
+              mensagem: { type: string, maxLength: 255 }
