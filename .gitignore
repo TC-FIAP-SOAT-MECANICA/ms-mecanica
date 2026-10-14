@@ -4,6 +4,7 @@ out/
 .idea/shelf/
 .env
 data/
+logs/
 .claude/
 .agents/
 skills-lock.json
