@@ -1,0 +1,1782 @@
+{
+  "info": {
+    "name": "Oficina Mecânica API",
+    "description": "Endpoints do contrato oficina-mecanica-contract.yaml. Ajuste a variável baseUrl se a aplicação rodar em outra porta.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/api/v1"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "refreshToken",
+      "value": ""
+    },
+    {
+      "key": "clienteToken",
+      "value": ""
+    },
+    {
+      "key": "etag",
+      "value": ""
+    },
+    {
+      "key": "clienteId",
+      "value": ""
+    },
+    {
+      "key": "veiculoId",
+      "value": ""
+    },
+    {
+      "key": "servicoId",
+      "value": ""
+    },
+    {
+      "key": "pecaId",
+      "value": ""
+    },
+    {
+      "key": "osId",
+      "value": ""
+    },
+    {
+      "key": "itemId",
+      "value": ""
+    },
+    {
+      "key": "desafioId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "✅ Implementados",
+      "item": [
+        {
+          "name": "Cadastrar serviço",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Gerado a cada envio"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/servicos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "servicos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Troca de óleo\",\n  \"descricao\": \"Óleo 5W30 + filtro\",\n  \"preco\": \"149.90\",\n  \"tempoEstimadoMinutos\": 45\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"servicoId\", pm.response.json().id);",
+                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cadastrar serviço — preço inválido (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Gerado a cada envio"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/servicos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "servicos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Troca de óleo\",\n  \"descricao\": \"Óleo 5W30 + filtro\",\n  \"preco\": \"149,9\",\n  \"tempoEstimadoMinutos\": 45\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));",
+                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cadastrar serviço — tempo zero (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Gerado a cada envio"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/servicos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "servicos"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Troca de óleo\",\n  \"descricao\": \"Óleo 5W30 + filtro\",\n  \"preco\": \"149.90\",\n  \"tempoEstimadoMinutos\": 0\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));",
+                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cadastrar cliente",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Gerado a cada envio"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento\": \"52998224725\",\n  \"nome\": \"João da Silva\",\n  \"email\": \"joao@email.com\",\n  \"telefone\": \"+5511999998888\",\n  \"endereco\": {\n    \"logradouro\": \"Rua das Flores\",\n    \"numero\": \"100\",\n    \"bairro\": \"Centro\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"cep\": \"01001000\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "description": "Rode uma vez. Na segunda vez o CPF já existe e a resposta é 409."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set(\"clienteId\", pm.response.json().id);",
+                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cadastrar cliente — CPF já cadastrado (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Gerado a cada envio"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento\": \"52998224725\",\n  \"nome\": \"João da Silva\",\n  \"email\": \"joao@email.com\",\n  \"telefone\": \"+5511999998888\",\n  \"endereco\": {\n    \"logradouro\": \"Rua das Flores\",\n    \"numero\": \"100\",\n    \"bairro\": \"Centro\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"cep\": \"01001000\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 409\", () => pm.response.to.have.status(409));",
+                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Cadastrar cliente — CPF inválido",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Gerado a cada envio"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento\": \"52998224700\",\n  \"nome\": \"João da Silva\",\n  \"email\": \"joao@email.com\",\n  \"telefone\": \"+5511999998888\",\n  \"endereco\": {\n    \"logradouro\": \"Rua das Flores\",\n    \"numero\": \"100\",\n    \"bairro\": \"Centro\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"cep\": \"01001000\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Erro de validação\", () => pm.expect(pm.response.code).to.be.oneOf([400, 422]));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detalhar cliente",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes/{{clienteId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes",
+                "{{clienteId}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Detalhar cliente — inexistente (404)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));",
+                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                ]
+              }
+            }
+          ]
+        }
+      ],
+      "description": "Operações já implementadas neste branch. Os testes salvam ids e ETag nas variáveis da collection."
+    },
+    {
+      "name": "📊 Observabilidade",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "health"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Métricas (formato Prometheus)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/prometheus",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "prometheus"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Métricas disponíveis",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/actuator/metrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "actuator",
+                "metrics"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
+                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "📄 Contrato completo (ainda não implementados: respondem 501)",
+      "item": [
+        {
+          "name": "Identidade & Acesso",
+          "item": [
+            {
+              "name": "Login",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/login",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "login"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"email\": \"admin@oficina.local\",\n  \"senha\": \"admin-local-123\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) { pm.collectionVariables.set(\"accessToken\", pm.response.json().accessToken); pm.collectionVariables.set(\"refreshToken\", pm.response.json().refreshToken); }"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Renovar token",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/refresh",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "refresh"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              }
+            },
+            {
+              "name": "Logout",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/auth/logout",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "auth",
+                    "logout"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Clientes",
+          "item": [
+            {
+              "name": "Listar clientes",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/clientes?page=0&size=20&nome=Jo&sort=nome",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "clientes"
+                  ],
+                  "query": [
+                    {
+                      "key": "page",
+                      "value": "0"
+                    },
+                    {
+                      "key": "size",
+                      "value": "20"
+                    },
+                    {
+                      "key": "nome",
+                      "value": "Jo"
+                    },
+                    {
+                      "key": "sort",
+                      "value": "nome"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Pesquisar por CPF/CNPJ",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/clientes/pesquisa",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "clientes",
+                    "pesquisa"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"documento\": \"52998224725\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Atualizar cliente",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/clientes/{{clienteId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "clientes",
+                    "{{clienteId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"nome\": \"João da Silva\",\n  \"email\": \"joao@email.com\",\n  \"telefone\": \"+5511999998888\",\n  \"endereco\": {\n    \"logradouro\": \"Rua das Flores\",\n    \"numero\": \"100\",\n    \"bairro\": \"Centro\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"cep\": \"01001000\"\n  }\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Remover cliente",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/clientes/{{clienteId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "clientes",
+                    "{{clienteId}}"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Veículos",
+          "item": [
+            {
+              "name": "Cadastrar veículo",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "Gerado a cada envio"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/veiculos",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "veiculos"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"placa\": \"ABC1D23\",\n  \"marca\": \"Volkswagen\",\n  \"modelo\": \"Gol 1.6\",\n  \"ano\": 2019,\n  \"cor\": \"Prata\",\n  \"clienteId\": \"{{clienteId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "if (pm.response.code < 300) pm.collectionVariables.set(\"veiculoId\", pm.response.json().id);",
+                      "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Listar veículos",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/veiculos?clienteId={{clienteId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "veiculos"
+                  ],
+                  "query": [
+                    {
+                      "key": "clienteId",
+                      "value": "{{clienteId}}"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Detalhar veículo",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/veiculos/{{veiculoId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "veiculos",
+                    "{{veiculoId}}"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Atualizar veículo",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/veiculos/{{veiculoId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "veiculos",
+                    "{{veiculoId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"placa\": \"ABC1D23\",\n  \"marca\": \"Volkswagen\",\n  \"modelo\": \"Gol 1.6\",\n  \"ano\": 2019,\n  \"cor\": \"Preto\",\n  \"clienteId\": \"{{clienteId}}\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Remover veículo",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/veiculos/{{veiculoId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "veiculos",
+                    "{{veiculoId}}"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Serviços",
+          "item": [
+            {
+              "name": "Listar serviços",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/servicos?ativo=true",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "servicos"
+                  ],
+                  "query": [
+                    {
+                      "key": "ativo",
+                      "value": "true"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Detalhar serviço",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/servicos/{{servicoId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "servicos",
+                    "{{servicoId}}"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Atualizar serviço",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/servicos/{{servicoId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "servicos",
+                    "{{servicoId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"nome\": \"Troca de óleo\",\n  \"descricao\": \"Óleo 5W30 + filtro\",\n  \"preco\": \"159.90\",\n  \"tempoEstimadoMinutos\": 45\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Inativar serviço",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/servicos/{{servicoId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "servicos",
+                    "{{servicoId}}"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Peças e Insumos",
+          "item": [
+            {
+              "name": "Cadastrar peça",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "Gerado a cada envio"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/pecas",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pecas"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"codigo\": \"FLT-OLEO-001\",\n  \"nome\": \"Filtro de óleo\",\n  \"tipo\": \"PECA\",\n  \"unidade\": \"UNIDADE\",\n  \"fabricante\": \"Tecfil\",\n  \"precoCusto\": \"18.00\",\n  \"precoVenda\": \"35.00\",\n  \"estoqueMinimo\": 5\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "if (pm.response.code < 300) pm.collectionVariables.set(\"pecaId\", pm.response.json().id);",
+                      "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Listar peças",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/pecas?abaixoDoMinimo=false",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pecas"
+                  ],
+                  "query": [
+                    {
+                      "key": "abaixoDoMinimo",
+                      "value": "false"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Detalhar peça",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/pecas/{{pecaId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pecas",
+                    "{{pecaId}}"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Atualizar peça",
+              "request": {
+                "method": "PUT",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/pecas/{{pecaId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pecas",
+                    "{{pecaId}}"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"codigo\": \"FLT-OLEO-001\",\n  \"nome\": \"Filtro de óleo\",\n  \"tipo\": \"PECA\",\n  \"unidade\": \"UNIDADE\",\n  \"fabricante\": \"Tecfil\",\n  \"precoCusto\": \"18.00\",\n  \"precoVenda\": \"39.90\",\n  \"estoqueMinimo\": 5\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Entrada no estoque",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "Gerado a cada envio"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/pecas/{{pecaId}}/movimentacoes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pecas",
+                    "{{pecaId}}",
+                    "movimentacoes"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tipo\": \"ENTRADA\",\n  \"quantidade\": 20,\n  \"motivo\": \"Compra\",\n  \"custoUnitario\": \"18.00\",\n  \"documentoFiscal\": \"NF 12345\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Listar movimentações",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/pecas/{{pecaId}}/movimentacoes",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pecas",
+                    "{{pecaId}}",
+                    "movimentacoes"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Inativar peça",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/pecas/{{pecaId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "pecas",
+                    "{{pecaId}}"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Ordens de Serviço",
+          "item": [
+            {
+              "name": "Abrir OS (cliente e veículo novos)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "Gerado a cada envio"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ordens-servico",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ordens-servico"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"documentoCliente\": \"11144477735\",\n  \"novoCliente\": {\n    \"nome\": \"Maria Souza\",\n    \"email\": \"maria@email.com\"\n  },\n  \"novoVeiculo\": {\n    \"placa\": \"QWE1234\",\n    \"marca\": \"Fiat\",\n    \"modelo\": \"Uno\",\n    \"ano\": 2015\n  },\n  \"itens\": [\n    {\n      \"tipo\": \"SERVICO\",\n      \"referenciaId\": \"{{servicoId}}\",\n      \"quantidade\": 1\n    },\n    {\n      \"tipo\": \"PECA\",\n      \"referenciaId\": \"{{pecaId}}\",\n      \"quantidade\": 1\n    }\n  ],\n  \"relatoCliente\": \"Barulho ao frear\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
+                      "if (pm.response.code < 300) pm.collectionVariables.set(\"osId\", pm.response.json().id);",
+                      "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Listar OS",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/ordens-servico?status=RECEBIDA&status=EM_EXECUCAO",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ordens-servico"
+                  ],
+                  "query": [
+                    {
+                      "key": "status",
+                      "value": "RECEBIDA"
+                    },
+                    {
+                      "key": "status",
+                      "value": "EM_EXECUCAO"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Detalhar OS",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ordens-servico",
+                    "{{osId}}"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Incluir item",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "Gerado a cada envio"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}/itens",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ordens-servico",
+                    "{{osId}}",
+                    "itens"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"tipo\": \"SERVICO\",\n  \"referenciaId\": \"{{servicoId}}\",\n  \"quantidade\": 1\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code < 300) { const itens = pm.response.json().itens; pm.collectionVariables.set(\"itemId\", itens[itens.length - 1].id); }",
+                      "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Remover item",
+              "request": {
+                "method": "DELETE",
+                "header": [
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}/itens/{{itemId}}",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ordens-servico",
+                    "{{osId}}",
+                    "itens",
+                    "{{itemId}}"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Iniciar diagnóstico",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}/diagnostico",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ordens-servico",
+                    "{{osId}}",
+                    "diagnostico"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"observacao\": \"Pastilhas gastas\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Enviar orçamento",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "Gerado a cada envio"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}/orcamento/envio",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ordens-servico",
+                    "{{osId}}",
+                    "orcamento",
+                    "envio"
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Finalizar execução",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}/finalizacao",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ordens-servico",
+                    "{{osId}}",
+                    "finalizacao"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"observacao\": \"Serviço concluído\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "name": "Registrar entrega",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "If-Match",
+                    "value": "{{etag}}",
+                    "description": "ETag da última resposta (salvo automaticamente)"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}/entrega",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "ordens-servico",
+                    "{{osId}}",
+                    "entrega"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Portal do Cliente",
+          "item": [
+            {
+              "name": "Solicitar código de acesso (OTP)",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/portal/autenticacao",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "portal",
+                    "autenticacao"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"codigoAcompanhamento\": \"OS-7K2M9QXAHT\",\n  \"documento\": \"11144477735\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 202) pm.collectionVariables.set(\"desafioId\", pm.response.json().desafioId);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Validar código e obter token",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/portal/autenticacao/{{desafioId}}/verificacao",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "portal",
+                    "autenticacao",
+                    "{{desafioId}}",
+                    "verificacao"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"codigo\": \"123456\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "noauth"
+                }
+              },
+              "event": [
+                {
+                  "listen": "test",
+                  "script": {
+                    "type": "text/javascript",
+                    "exec": [
+                      "if (pm.response.code === 200) pm.collectionVariables.set(\"clienteToken\", pm.response.json().accessToken);"
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "name": "Acompanhar OS",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/portal/ordem-servico",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "portal",
+                    "ordem-servico"
+                  ]
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{clienteToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Aprovar orçamento",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "Gerado a cada envio"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/portal/ordem-servico/orcamento/decisao",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "portal",
+                    "ordem-servico",
+                    "orcamento",
+                    "decisao"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decisao\": \"APROVAR\",\n  \"versaoOrcamento\": 1\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{clienteToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "name": "Recusar orçamento",
+              "request": {
+                "method": "POST",
+                "header": [
+                  {
+                    "key": "Content-Type",
+                    "value": "application/json"
+                  },
+                  {
+                    "key": "Idempotency-Key",
+                    "value": "{{$guid}}",
+                    "description": "Gerado a cada envio"
+                  }
+                ],
+                "url": {
+                  "raw": "{{baseUrl}}/portal/ordem-servico/orcamento/decisao",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "portal",
+                    "ordem-servico",
+                    "orcamento",
+                    "decisao"
+                  ]
+                },
+                "body": {
+                  "mode": "raw",
+                  "raw": "{\n  \"decisao\": \"RECUSAR\",\n  \"versaoOrcamento\": 1,\n  \"comentario\": \"Fica para depois\"\n}",
+                  "options": {
+                    "raw": {
+                      "language": "json"
+                    }
+                  }
+                },
+                "auth": {
+                  "type": "bearer",
+                  "bearer": [
+                    {
+                      "key": "token",
+                      "value": "{{clienteToken}}",
+                      "type": "string"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        {
+          "name": "Métricas",
+          "item": [
+            {
+              "name": "Tempo médio de execução",
+              "request": {
+                "method": "GET",
+                "header": [],
+                "url": {
+                  "raw": "{{baseUrl}}/metricas/tempo-medio-execucao?dataInicio=2026-01-01&dataFim=2026-12-31",
+                  "host": [
+                    "{{baseUrl}}"
+                  ],
+                  "path": [
+                    "metricas",
+                    "tempo-medio-execucao"
+                  ],
+                  "query": [
+                    {
+                      "key": "dataInicio",
+                      "value": "2026-01-01"
+                    },
+                    {
+                      "key": "dataFim",
+                      "value": "2026-12-31"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

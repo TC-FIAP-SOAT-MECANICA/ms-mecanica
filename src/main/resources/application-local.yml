@@ -1,0 +1,10 @@
+# Desenvolvimento local sem Docker: H2 embutido, gravado em ./data e em modo compatível com PostgreSQL.
+spring:
+  datasource:
+    url: jdbc:h2:file:./data/oficina;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH
+    username: sa
+    password:
+  h2:
+    console:
+      # Console web para ver as tabelas: http://localhost:8080/api/v1/h2-console
+      enabled: true
