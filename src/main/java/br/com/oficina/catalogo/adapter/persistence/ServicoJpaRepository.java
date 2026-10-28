@@ -1,9 +1,10 @@
 package br.com.oficina.catalogo.adapter.persistence;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 
-import java.util.UUID;
+interface ServicoJpaRepository extends JpaRepository<ServicoJpaEntity, Integer> {
 
-/** Repositório do Spring Data. É um detalhe interno do adapter: o resto do sistema não o enxerga. */
-interface ServicoJpaRepository extends JpaRepository<ServicoJpaEntity, UUID> {
+    Page<ServicoJpaEntity> findByNomeContainingIgnoreCase(String nome, Pageable pageable);
 }

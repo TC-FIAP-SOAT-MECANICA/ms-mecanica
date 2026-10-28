@@ -1,42 +1,72 @@
-package br.com.oficina.cadastro.adapter.persistence;
+package br.com.oficina.cadastro.adapter.persistence.veiculo;
 
-
+import br.com.oficina.cadastro.domain.DadosVeiculo;
+import br.com.oficina.cadastro.domain.Placa;
+import br.com.oficina.cadastro.domain.Veiculo;
+import br.com.oficina.shared.adapter.persistence.crypto.CampoCriptografadoConverter;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
-import org.springframework.format.annotation.DateTimeFormat;
-
-import java.time.OffsetDateTime;
-import java.util.UUID;
 
 @Entity
-@Table(name = "veiculo")
-public class VeiculoJpaEntity {
+@Table(name = "veiculos")
+class VeiculoJpaEntity {
+
     @Id
-    private  UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Integer id;
 
-    @Column(nullable = false, length = 150)
-    private  String placa;
+    @Column(name = "cliente_id", nullable = false)
+    private Integer clienteId;
 
-    @Column(nullable = false, length = 150)
+    @Convert(converter = CampoCriptografadoConverter.class)
+    @Column(nullable = false)
+    private String placa;
+
+    @Column(name = "placa_hash", unique = true, length = 64)
+    private String placaHash;
+
+    @Column(nullable = false, length = 50)
     private String marca;
 
-    @Column(nullable = false, length = 150)
-    private  String modelo;
+    @Column(nullable = false, length = 50)
+    private String modelo;
 
-    @Column(length = 4)
-    private  Integer ano;
+    @Column(nullable = false)
+    private Integer ano;
 
-    @Column(nullable = false, length = 150)
-    private  String cor;
+    @Column(length = 30)
+    private String cor;
 
-    @Column(nullable = false, length = 150)
-    private  UUID clienteId;
+    @Column(unique = true, length = 30)
+    private String chassi;
 
-    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-    private OffsetDateTime criadoEm;
+    private Integer quilometragem;
 
-    @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-    private OffsetDateTime atualizadoEm;
+    protected VeiculoJpaEntity() {
+    }
+
+    static VeiculoJpaEntity from(Veiculo veiculo, String placaHash) {
+        var entity = new VeiculoJpaEntity();
+        entity.id = veiculo.id();
+        entity.clienteId = veiculo.clienteId();
+        entity.placa = veiculo.placa().valor();
+        entity.placaHash = placaHash;
+        entity.marca = veiculo.marca();
+        entity.modelo = veiculo.modelo();
+        entity.ano = veiculo.ano();
+        entity.cor = veiculo.cor();
+        entity.chassi = veiculo.chassi();
+        entity.quilometragem = veiculo.quilometragem();
+        return entity;
+    }
+
+    Veiculo toDomain() {
+        return Veiculo.restaurar(id, new DadosVeiculo(clienteId, new Placa(placa), marca, modelo, ano, cor, chassi,
+                quilometragem));
+    }
 }

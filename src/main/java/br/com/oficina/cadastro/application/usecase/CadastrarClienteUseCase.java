@@ -3,37 +3,42 @@ package br.com.oficina.cadastro.application.usecase;
 import br.com.oficina.cadastro.application.dto.CadastrarClienteInput;
 import br.com.oficina.cadastro.application.dto.ClienteOutput;
 import br.com.oficina.cadastro.application.port.ClienteRepository;
+import br.com.oficina.cadastro.application.port.UsuarioGateway.UsuarioCriado;
+import br.com.oficina.cadastro.application.port.UsuarioGateway;
 import br.com.oficina.cadastro.domain.Cliente;
+import br.com.oficina.shared.application.dto.Solicitante;
+import br.com.oficina.shared.application.port.UnitOfWork;
 import br.com.oficina.shared.domain.exception.ConflictException;
+import br.com.oficina.shared.domain.exception.ForbiddenException;
 import br.com.oficina.shared.domain.valueobject.Documento;
 
-import java.time.Clock;
-
-/**
- * Caso de uso: cadastrar cliente ({@code POST /clientes}).
- *
- * <p>Regra de aplicação: o CPF/CNPJ não pode estar cadastrado em outro cliente. Essa checagem precisa
- * consultar o banco, por isso fica aqui (no caso de uso) e não na entidade.
- */
 public class CadastrarClienteUseCase {
 
     private final ClienteRepository repository;
-    private final Clock clock;
+    private final UsuarioGateway usuarioGateway;
+    private final UnitOfWork unitOfWork;
 
-    public CadastrarClienteUseCase(ClienteRepository repository, Clock clock) {
+    public CadastrarClienteUseCase(ClienteRepository repository, UsuarioGateway usuarioGateway,
+                                   UnitOfWork unitOfWork) {
         this.repository = repository;
-        this.clock = clock;
+        this.usuarioGateway = usuarioGateway;
+        this.unitOfWork = unitOfWork;
     }
 
-    public ClienteOutput execute(CadastrarClienteInput input) {
-        Documento documento = new Documento(input.documento());
-        if (repository.existsByDocumento(documento)) {
-            throw new ConflictException("Já existe cliente com este CPF/CNPJ");
+    public ClienteOutput execute(CadastrarClienteInput input, Solicitante solicitante) {
+        if (solicitante.isCliente()) {
+            throw new ForbiddenException("Cliente autenticado não pode cadastrar outro cliente");
         }
-
-        Cliente cliente = Cliente.cadastrar(documento, input.nome(), input.email(), input.telefone(),
-                input.endereco() == null ? null : input.endereco().toDomain(), clock.instant());
-        repository.save(cliente);
-        return ClienteOutput.from(cliente);
+        Documento documento = new Documento(input.documento());
+        return unitOfWork.execute(() -> {
+            if (repository.existsByDocumento(documento)) {
+                throw new ConflictException("DOCUMENTO_JA_CADASTRADO", "Já existe cliente com este CPF/CNPJ");
+            }
+            UsuarioCriado usuario = usuarioGateway.cadastrarUsuarioCliente(input.nome(), input.email(),
+                    input.telefone(), input.senha());
+            Cliente cliente = Cliente.cadastrar(usuario.id(), documento, usuario.nome(), usuario.email(),
+                    usuario.telefone(), usuario.criadoEm());
+            return ClienteOutput.from(repository.save(cliente));
+        });
     }
 }

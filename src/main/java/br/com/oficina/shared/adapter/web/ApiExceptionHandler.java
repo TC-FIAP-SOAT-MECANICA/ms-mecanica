@@ -1,33 +1,96 @@
 package br.com.oficina.shared.adapter.web;
 
+import br.com.oficina.shared.domain.exception.BusinessRuleException;
 import br.com.oficina.shared.domain.exception.ConflictException;
+import br.com.oficina.shared.domain.exception.DomainException;
+import br.com.oficina.shared.domain.exception.ForbiddenException;
 import br.com.oficina.shared.domain.exception.ResourceNotFoundException;
+import br.com.oficina.shared.domain.exception.UnauthorizedException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
-/**
- * Traduz exceções para respostas HTTP no formato RFC 9457 ({@code application/problem+json}).
- *
- * <p>O domínio só lança exceções Java; é aqui que se decide o status HTTP. Erros de validação do JSON
- * ({@code @Valid}) já são tratados pelo Spring com {@code spring.mvc.problemdetails.enabled=true}.
- */
 @RestControllerAdvice
-public class ApiExceptionHandler {
+public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
     @ExceptionHandler(IllegalArgumentException.class)
-    ProblemDetail regraViolada(IllegalArgumentException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+    ProblemDetail invalidArgument(IllegalArgumentException ex) {
+        return problem(HttpStatus.BAD_REQUEST, "VALIDACAO", ex.getMessage());
     }
 
-    @ExceptionHandler(ConflictException.class)
-    ProblemDetail conflito(ConflictException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, ex.getMessage());
+    @ExceptionHandler(UnauthorizedException.class)
+    ProblemDetail unauthorized(UnauthorizedException ex) {
+        return problem(HttpStatus.UNAUTHORIZED, ex);
+    }
+
+    @ExceptionHandler(ForbiddenException.class)
+    ProblemDetail forbidden(ForbiddenException ex) {
+        return problem(HttpStatus.FORBIDDEN, ex);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
-    ProblemDetail naoEncontrado(ResourceNotFoundException ex) {
-        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+    ProblemDetail notFound(ResourceNotFoundException ex) {
+        return problem(HttpStatus.NOT_FOUND, ex);
+    }
+
+    @ExceptionHandler(ConflictException.class)
+    ProblemDetail conflict(ConflictException ex) {
+        return problem(HttpStatus.CONFLICT, ex);
+    }
+
+    @ExceptionHandler(BusinessRuleException.class)
+    ProblemDetail businessRule(BusinessRuleException ex) {
+        return problem(HttpStatus.UNPROCESSABLE_CONTENT, ex);
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    ProblemDetail dataIntegrity(DataIntegrityViolationException ex) {
+        log.warn("Violação de integridade: {}", ex.getMostSpecificCause().getMessage());
+        return problem(HttpStatus.CONFLICT, "REGISTRO_EM_USO",
+                "Operação viola uma restrição do banco (registro em uso ou duplicado)");
+    }
+
+    @Override
+    protected ResponseEntity<Object> handleExceptionInternal(Exception ex, Object body, HttpHeaders headers,
+                                                             HttpStatusCode statusCode, WebRequest request) {
+        ResponseEntity<Object> response = super.handleExceptionInternal(ex, body, headers, statusCode, request);
+        if (response != null && response.getBody() instanceof ProblemDetail problemDetail) {
+            problemDetail.setProperty("codigo", codeFor(statusCode));
+            problemDetail.setProperty("traceId", MDC.get(RequestIdFilter.MDC_KEY));
+        }
+        return response;
+    }
+
+    private static String codeFor(HttpStatusCode statusCode) {
+        return switch (statusCode.value()) {
+            case 401 -> "NAO_AUTENTICADO";
+            case 403 -> "ACESSO_NEGADO";
+            case 404 -> "RECURSO_NAO_ENCONTRADO";
+            case 501 -> "NAO_IMPLEMENTADO";
+            default -> statusCode.is5xxServerError() ? "ERRO_INTERNO" : "VALIDACAO";
+        };
+    }
+
+    private static ProblemDetail problem(HttpStatus status, DomainException ex) {
+        return problem(status, ex.code(), ex.getMessage());
+    }
+
+    public static ProblemDetail problem(HttpStatus status, String code, String detail) {
+        ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(status, detail);
+        problemDetail.setProperty("codigo", code);
+        problemDetail.setProperty("traceId", MDC.get(RequestIdFilter.MDC_KEY));
+        return problemDetail;
     }
 }

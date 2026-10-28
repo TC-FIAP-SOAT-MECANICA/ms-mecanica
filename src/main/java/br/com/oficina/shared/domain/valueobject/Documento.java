@@ -1,11 +1,5 @@
 package br.com.oficina.shared.domain.valueobject;
 
-/**
- * Value Object: CPF (11 dígitos) ou CNPJ (14 dígitos), validado pelos dígitos verificadores.
- *
- * <p>O contrato só confere o formato (quantidade de dígitos); a regra dos dígitos verificadores é de negócio
- * e fica aqui. Se o objeto existe, o documento é válido.
- */
 public record Documento(String valor) {
 
     public enum Tipo { CPF, CNPJ }
@@ -29,7 +23,6 @@ public record Documento(String valor) {
         return valor.length() == 11 ? Tipo.CPF : Tipo.CNPJ;
     }
 
-    /** Nunca imprime o documento completo em logs (LGPD). */
     @Override
     public String toString() {
         return "Documento[" + tipo() + " ***" + valor.substring(valor.length() - 2) + "]";

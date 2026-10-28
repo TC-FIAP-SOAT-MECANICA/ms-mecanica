@@ -1,12 +1,16 @@
-package br.com.oficina.cadastro.adapter.persistence;
+package br.com.oficina.cadastro.adapter.persistence.veiculo;
 
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
-import java.util.List;
-import java.util.UUID;
+interface VeiculoJpaRepository extends JpaRepository<VeiculoJpaEntity, Integer>,
+        JpaSpecificationExecutor<VeiculoJpaEntity> {
 
-public interface VeiculoJpaRepository  extends JpaRepository<VeiculoJpaEntity, UUID> {
+    boolean existsByPlacaHash(String placaHash);
 
-    List<VeiculoJpaEntity> findByClienteId(UUID clienteId);
+    boolean existsByPlacaHashAndIdNot(String placaHash, Integer id);
 
+    boolean existsByChassi(String chassi);
+
+    boolean existsByChassiAndIdNot(String chassi, Integer id);
 }

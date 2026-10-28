@@ -1,9 +1,8 @@
 package br.com.oficina.shared.domain.exception;
 
-/** Conflito com o estado atual (ex.: CPF/CNPJ já cadastrado). Vira HTTP 409 no {@code ApiExceptionHandler}. */
-public class ConflictException extends RuntimeException {
+public class ConflictException extends DomainException {
 
-    public ConflictException(String message) {
-        super(message);
+    public ConflictException(String code, String message) {
+        super(code, message);
     }
 }

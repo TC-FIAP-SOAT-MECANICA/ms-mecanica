@@ -3,14 +3,9 @@ package br.com.oficina.shared.domain.valueobject;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
-/**
- * Value Object: valor em reais, sempre com 2 casas decimais e nunca negativo.
- *
- * <p>Como a validação está no construtor, é impossível existir um {@code Dinheiro} inválido no sistema —
- * quem recebe um não precisa validar de novo. Por ser um {@code record}, é imutável e dois objetos com o
- * mesmo valor são iguais.
- */
 public record Dinheiro(BigDecimal valor) {
+
+    public static final Dinheiro ZERO = new Dinheiro(BigDecimal.ZERO);
 
     public Dinheiro {
         if (valor == null || valor.signum() < 0) {
@@ -20,10 +15,20 @@ public record Dinheiro(BigDecimal valor) {
     }
 
     public static Dinheiro de(String valor) {
+        if (valor == null) {
+            throw new IllegalArgumentException("Valor monetário é obrigatório");
+        }
         return new Dinheiro(new BigDecimal(valor));
     }
 
-    /** Formato do contrato: string decimal, ex. {@code "149.90"}. */
+    public Dinheiro somar(Dinheiro outro) {
+        return new Dinheiro(valor.add(outro.valor));
+    }
+
+    public Dinheiro multiplicar(Quantidade quantidade) {
+        return new Dinheiro(valor.multiply(quantidade.valor()));
+    }
+
     @Override
     public String toString() {
         return valor.toPlainString();

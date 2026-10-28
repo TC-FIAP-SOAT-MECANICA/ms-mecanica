@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "Oficina Mecânica API",
-    "description": "Endpoints do contrato oficina-mecanica-contract.yaml. Ajuste a variável baseUrl se a aplicação rodar em outra porta.",
+    "description": "Endpoints do contrato `oficina-mecanica-contract.yaml`, com autenticação JWT por perfil.\n\n**Como usar:** clique em *Run collection*. O fluxo faz login como ADMIN, cria um MECANICO e um CLIENTE, guarda os três tokens (`tokenAdmin`, `tokenMecanico`, `tokenCliente`) e usa em cada request o token do perfil indicado na descrição. Requests `[acesso negado]` confirmam as restrições de cada perfil; `[erro]` validam as regras de negócio.\n\n**Automático:** `Idempotency-Key` nos POST e verificação de `X-Request-Id`, tempo de resposta e formato dos erros (RFC 9457).\n\nAjuste `baseUrl`, `adminEmail` e `adminSenha` se necessário.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -9,415 +9,95 @@
     "bearer": [
       {
         "key": "token",
-        "value": "{{accessToken}}",
+        "value": "{{tokenAdmin}}",
         "type": "string"
       }
     ]
   },
-  "variable": [
+  "event": [
     {
-      "key": "baseUrl",
-      "value": "http://localhost:8080/api/v1"
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (pm.request.method === 'POST') {",
+          "  pm.request.headers.upsert({ key: 'Idempotency-Key', value: pm.variables.replaceIn('{{$guid}}') });",
+          "}",
+          "if (!pm.collectionVariables.get('sufixo')) {",
+          "  const digito = () => Math.floor(Math.random() * 10);",
+          "  const cpf = () => {",
+          "    const n = Array.from({ length: 9 }, digito);",
+          "    const dv = (peso) => { const r = (n.reduce((t, x, i) => t + x * (peso - i), 0) * 10) % 11; return r === 10 ? 0 : r; };",
+          "    n.push(dv(10)); n.push(dv(11));",
+          "    return n.join('');",
+          "  };",
+          "  const letras = 'ABCDEFGHJKLMNPRSTUVWXYZ';",
+          "  const letra = () => letras[Math.floor(Math.random() * letras.length)];",
+          "  const placa = () => letra() + letra() + letra() + digito() + letra() + digito() + digito();",
+          "  pm.collectionVariables.set('sufixo', Date.now().toString());",
+          "  ['cpf', 'cpf2', 'cpf3'].forEach(v => pm.collectionVariables.set(v, cpf()));",
+          "  ['placa', 'placa2'].forEach(v => pm.collectionVariables.set(v, placa()));",
+          "}"
+        ]
+      }
     },
     {
-      "key": "accessToken",
-      "value": ""
-    },
-    {
-      "key": "refreshToken",
-      "value": ""
-    },
-    {
-      "key": "clienteToken",
-      "value": ""
-    },
-    {
-      "key": "etag",
-      "value": ""
-    },
-    {
-      "key": "clienteId",
-      "value": ""
-    },
-    {
-      "key": "veiculoId",
-      "value": ""
-    },
-    {
-      "key": "servicoId",
-      "value": ""
-    },
-    {
-      "key": "pecaId",
-      "value": ""
-    },
-    {
-      "key": "osId",
-      "value": ""
-    },
-    {
-      "key": "itemId",
-      "value": ""
-    },
-    {
-      "key": "desafioId",
-      "value": ""
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Resposta em menos de 3 s', () => pm.expect(pm.response.responseTime).to.be.below(3000));",
+          "pm.test('Devolve X-Request-Id', () => pm.expect(pm.response.headers.has('X-Request-Id')).to.be.true);",
+          "const tipo = pm.response.headers.get('Content-Type') || '';",
+          "if (pm.response.code >= 400 && tipo.includes('problem+json')) {",
+          "  const erro = pm.response.json();",
+          "  pm.test('Erro no formato RFC 9457 com codigo', () => pm.expect(erro.codigo).to.be.a('string'));",
+          "  pm.test('traceId igual ao X-Request-Id', () => pm.expect(erro.traceId).to.eql(pm.response.headers.get('X-Request-Id')));",
+          "}"
+        ]
+      }
     }
   ],
   "item": [
     {
-      "name": "✅ Implementados",
+      "name": "0. Preparação",
+      "description": "Confere se a API está no ar e gera dados novos (CPFs, placas, sufixo de e-mail e SKU). Rode esta pasta antes das outras quando executar pastas isoladamente.",
       "item": [
         {
-          "name": "Cadastrar serviço",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}",
-                "description": "Gerado a cada envio"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/servicos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "servicos"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"nome\": \"Troca de óleo\",\n  \"descricao\": \"Óleo 5W30 + filtro\",\n  \"preco\": \"149.90\",\n  \"tempoEstimadoMinutos\": 45\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
+          "name": "Health check + gerar dados de teste",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                  "if (pm.response.code < 300) pm.collectionVariables.set(\"servicoId\", pm.response.json().id);",
-                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = UP', () => pm.expect(pm.response.json().status).to.eql(\"UP\"));"
                 ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Cadastrar serviço — preço inválido (400)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}",
-                "description": "Gerado a cada envio"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/servicos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "servicos"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"nome\": \"Troca de óleo\",\n  \"descricao\": \"Óleo 5W30 + filtro\",\n  \"preco\": \"149,9\",\n  \"tempoEstimadoMinutos\": 45\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));",
-                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Cadastrar serviço — tempo zero (400)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}",
-                "description": "Gerado a cada envio"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/servicos",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "servicos"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"nome\": \"Troca de óleo\",\n  \"descricao\": \"Óleo 5W30 + filtro\",\n  \"preco\": \"149.90\",\n  \"tempoEstimadoMinutos\": 0\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 400\", () => pm.response.to.have.status(400));",
-                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Cadastrar cliente",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}",
-                "description": "Gerado a cada envio"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/clientes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "clientes"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"documento\": \"52998224725\",\n  \"nome\": \"João da Silva\",\n  \"email\": \"joao@email.com\",\n  \"telefone\": \"+5511999998888\",\n  \"endereco\": {\n    \"logradouro\": \"Rua das Flores\",\n    \"numero\": \"100\",\n    \"bairro\": \"Centro\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"cep\": \"01001000\"\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
               }
             },
-            "description": "Rode uma vez. Na segunda vez o CPF já existe e a resposta é 409."
-          },
-          "event": [
             {
-              "listen": "test",
+              "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                  "if (pm.response.code < 300) pm.collectionVariables.set(\"clienteId\", pm.response.json().id);",
-                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
+                  "const digito = () => Math.floor(Math.random() * 10);",
+                  "const cpf = () => {",
+                  "  const n = Array.from({ length: 9 }, digito);",
+                  "  const dv = (peso) => { const r = (n.reduce((t, x, i) => t + x * (peso - i), 0) * 10) % 11; return r === 10 ? 0 : r; };",
+                  "  n.push(dv(10)); n.push(dv(11));",
+                  "  return n.join('');",
+                  "};",
+                  "const letras = 'ABCDEFGHJKLMNPRSTUVWXYZ';",
+                  "const letra = () => letras[Math.floor(Math.random() * letras.length)];",
+                  "const placa = () => letra() + letra() + letra() + digito() + letra() + digito() + digito();",
+                  "pm.collectionVariables.set('sufixo', Date.now().toString());",
+                  "['cpf', 'cpf2', 'cpf3'].forEach(v => pm.collectionVariables.set(v, cpf()));",
+                  "['placa', 'placa2'].forEach(v => pm.collectionVariables.set(v, placa()));"
                 ]
               }
             }
-          ]
-        },
-        {
-          "name": "Cadastrar cliente — CPF já cadastrado (409)",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}",
-                "description": "Gerado a cada envio"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/clientes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "clientes"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"documento\": \"52998224725\",\n  \"nome\": \"João da Silva\",\n  \"email\": \"joao@email.com\",\n  \"telefone\": \"+5511999998888\",\n  \"endereco\": {\n    \"logradouro\": \"Rua das Flores\",\n    \"numero\": \"100\",\n    \"bairro\": \"Centro\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"cep\": \"01001000\"\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 409\", () => pm.response.to.have.status(409));",
-                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Cadastrar cliente — CPF inválido",
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
-              {
-                "key": "Idempotency-Key",
-                "value": "{{$guid}}",
-                "description": "Gerado a cada envio"
-              }
-            ],
-            "url": {
-              "raw": "{{baseUrl}}/clientes",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "clientes"
-              ]
-            },
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"documento\": \"52998224700\",\n  \"nome\": \"João da Silva\",\n  \"email\": \"joao@email.com\",\n  \"telefone\": \"+5511999998888\",\n  \"endereco\": {\n    \"logradouro\": \"Rua das Flores\",\n    \"numero\": \"100\",\n    \"bairro\": \"Centro\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"cep\": \"01001000\"\n  }\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Erro de validação\", () => pm.expect(pm.response.code).to.be.oneOf([400, 422]));"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Detalhar cliente",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/clientes/{{clienteId}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "clientes",
-                "{{clienteId}}"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Detalhar cliente — inexistente (404)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/clientes/00000000-0000-0000-0000-000000000000",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "clientes",
-                "00000000-0000-0000-0000-000000000000"
-              ]
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 404\", () => pm.response.to.have.status(404));",
-                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
-                ]
-              }
-            }
-          ]
-        }
-      ],
-      "description": "Operações já implementadas neste branch. Os testes salvam ids e ETag nas variáveis da collection."
-    },
-    {
-      "name": "📊 Observabilidade",
-      "item": [
-        {
-          "name": "Health",
+          ],
           "request": {
             "method": "GET",
             "header": [],
@@ -433,1350 +113,3576 @@
             },
             "auth": {
               "type": "noauth"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Métricas (formato Prometheus)",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/actuator/prometheus",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "actuator",
-                "prometheus"
-              ]
             },
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
-                ]
-              }
-            }
-          ]
-        },
-        {
-          "name": "Métricas disponíveis",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/actuator/metrics",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "actuator",
-                "metrics"
-              ]
-            },
-            "auth": {
-              "type": "noauth"
-            }
-          },
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test(\"Status 200\", () => pm.response.to.have.status(200));",
-                  "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
-                ]
-              }
-            }
-          ]
+            "description": "**Perfil:** sem token"
+          }
         }
       ]
     },
     {
-      "name": "📄 Contrato completo (ainda não implementados: respondem 501)",
+      "name": "1. Autenticação",
+      "description": "Login devolve um JWT (60 min) com o perfil. O ADMIN inicial é criado na subida da aplicação (`ADMIN_EMAIL` / `ADMIN_SENHA`, padrão admin@oficina.com / admin12345).",
       "item": [
         {
-          "name": "Identidade & Acesso",
-          "item": [
+          "name": "Login ADMIN",
+          "event": [
             {
-              "name": "Login",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/auth/login",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "auth",
-                    "login"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"email\": \"admin@oficina.local\",\n  \"senha\": \"admin-local-123\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "auth": {
-                  "type": "noauth"
-                }
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "if (pm.response.code === 200) { pm.collectionVariables.set(\"accessToken\", pm.response.json().accessToken); pm.collectionVariables.set(\"refreshToken\", pm.response.json().refreshToken); }"
-                    ]
-                  }
-                }
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('tokenAdmin', pm.response.json().accessToken);",
+                  "pm.test('perfil = ADMIN', () => pm.expect(pm.response.json().perfil).to.eql(\"ADMIN\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
               ]
             },
-            {
-              "name": "Renovar token",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/auth/refresh",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "auth",
-                    "refresh"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "auth": {
-                  "type": "noauth"
-                }
-              }
+            "auth": {
+              "type": "noauth"
             },
-            {
-              "name": "Logout",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/auth/logout",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "auth",
-                    "logout"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
+            "description": "**Perfil:** sem token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"senha\": \"{{adminSenha}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
                 }
               }
             }
-          ]
+          }
         },
         {
-          "name": "Clientes",
-          "item": [
+          "name": "[erro] Senha incorreta",
+          "event": [
             {
-              "name": "Listar clientes",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/clientes?page=0&size=20&nome=Jo&sort=nome",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "clientes"
-                  ],
-                  "query": [
-                    {
-                      "key": "page",
-                      "value": "0"
-                    },
-                    {
-                      "key": "size",
-                      "value": "20"
-                    },
-                    {
-                      "key": "nome",
-                      "value": "Jo"
-                    },
-                    {
-                      "key": "sort",
-                      "value": "nome"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "Pesquisar por CPF/CNPJ",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/clientes/pesquisa",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "clientes",
-                    "pesquisa"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"documento\": \"52998224725\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "name": "Atualizar cliente",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/clientes/{{clienteId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "clientes",
-                    "{{clienteId}}"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"nome\": \"João da Silva\",\n  \"email\": \"joao@email.com\",\n  \"telefone\": \"+5511999998888\",\n  \"endereco\": {\n    \"logradouro\": \"Rua das Flores\",\n    \"numero\": \"100\",\n    \"bairro\": \"Centro\",\n    \"cidade\": \"São Paulo\",\n    \"uf\": \"SP\",\n    \"cep\": \"01001000\"\n  }\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "name": "Remover cliente",
-              "request": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/clientes/{{clienteId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "clientes",
-                    "{{clienteId}}"
-                  ]
-                }
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('codigo NAO_AUTENTICADO', () => pm.expect(pm.response.json().codigo).to.eql('NAO_AUTENTICADO'));"
+                ]
               }
             }
-          ]
-        },
-        {
-          "name": "Veículos",
-          "item": [
-            {
-              "name": "Cadastrar veículo",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}",
-                    "description": "Gerado a cada envio"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/veiculos",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "veiculos"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"placa\": \"ABC1D23\",\n  \"marca\": \"Volkswagen\",\n  \"modelo\": \"Gol 1.6\",\n  \"ano\": 2019,\n  \"cor\": \"Prata\",\n  \"clienteId\": \"{{clienteId}}\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                      "if (pm.response.code < 300) pm.collectionVariables.set(\"veiculoId\", pm.response.json().id);",
-                      "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
-                    ]
-                  }
-                }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
               ]
             },
-            {
-              "name": "Listar veículos",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/veiculos?clienteId={{clienteId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "veiculos"
-                  ],
-                  "query": [
-                    {
-                      "key": "clienteId",
-                      "value": "{{clienteId}}"
-                    }
-                  ]
-                }
-              }
+            "auth": {
+              "type": "noauth"
             },
-            {
-              "name": "Detalhar veículo",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/veiculos/{{veiculoId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "veiculos",
-                    "{{veiculoId}}"
-                  ]
-                }
-              }
-            },
-            {
-              "name": "Atualizar veículo",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/veiculos/{{veiculoId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "veiculos",
-                    "{{veiculoId}}"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"placa\": \"ABC1D23\",\n  \"marca\": \"Volkswagen\",\n  \"modelo\": \"Gol 1.6\",\n  \"ano\": 2019,\n  \"cor\": \"Preto\",\n  \"clienteId\": \"{{clienteId}}\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "name": "Remover veículo",
-              "request": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/veiculos/{{veiculoId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "veiculos",
-                    "{{veiculoId}}"
-                  ]
+            "description": "**Perfil:** sem token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{adminEmail}}\",\n  \"senha\": \"senhaErrada1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
                 }
               }
             }
-          ]
+          }
         },
         {
-          "name": "Serviços",
-          "item": [
+          "name": "[erro] Sem token",
+          "event": [
             {
-              "name": "Listar serviços",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/servicos?ativo=true",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "servicos"
-                  ],
-                  "query": [
-                    {
-                      "key": "ativo",
-                      "value": "true"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "Detalhar serviço",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/servicos/{{servicoId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "servicos",
-                    "{{servicoId}}"
-                  ]
-                }
-              }
-            },
-            {
-              "name": "Atualizar serviço",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/servicos/{{servicoId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "servicos",
-                    "{{servicoId}}"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"nome\": \"Troca de óleo\",\n  \"descricao\": \"Óleo 5W30 + filtro\",\n  \"preco\": \"159.90\",\n  \"tempoEstimadoMinutos\": 45\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "name": "Inativar serviço",
-              "request": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/servicos/{{servicoId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "servicos",
-                    "{{servicoId}}"
-                  ]
-                }
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 401', () => pm.response.to.have.status(401));",
+                  "pm.test('codigo NAO_AUTENTICADO', () => pm.expect(pm.response.json().codigo).to.eql('NAO_AUTENTICADO'));"
+                ]
               }
             }
-          ]
-        },
-        {
-          "name": "Peças e Insumos",
-          "item": [
-            {
-              "name": "Cadastrar peça",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}",
-                    "description": "Gerado a cada envio"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/pecas",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "pecas"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"codigo\": \"FLT-OLEO-001\",\n  \"nome\": \"Filtro de óleo\",\n  \"tipo\": \"PECA\",\n  \"unidade\": \"UNIDADE\",\n  \"fabricante\": \"Tecfil\",\n  \"precoCusto\": \"18.00\",\n  \"precoVenda\": \"35.00\",\n  \"estoqueMinimo\": 5\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                      "if (pm.response.code < 300) pm.collectionVariables.set(\"pecaId\", pm.response.json().id);",
-                      "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
-                    ]
-                  }
-                }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usuarios/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios",
+                "me"
               ]
             },
-            {
-              "name": "Listar peças",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/pecas?abaixoDoMinimo=false",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "pecas"
-                  ],
-                  "query": [
-                    {
-                      "key": "abaixoDoMinimo",
-                      "value": "false"
-                    }
-                  ]
-                }
-              }
+            "auth": {
+              "type": "noauth"
             },
-            {
-              "name": "Detalhar peça",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/pecas/{{pecaId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "pecas",
-                    "{{pecaId}}"
-                  ]
-                }
-              }
-            },
-            {
-              "name": "Atualizar peça",
-              "request": {
-                "method": "PUT",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/pecas/{{pecaId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "pecas",
-                    "{{pecaId}}"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"codigo\": \"FLT-OLEO-001\",\n  \"nome\": \"Filtro de óleo\",\n  \"tipo\": \"PECA\",\n  \"unidade\": \"UNIDADE\",\n  \"fabricante\": \"Tecfil\",\n  \"precoCusto\": \"18.00\",\n  \"precoVenda\": \"39.90\",\n  \"estoqueMinimo\": 5\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "name": "Entrada no estoque",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}",
-                    "description": "Gerado a cada envio"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/pecas/{{pecaId}}/movimentacoes",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "pecas",
-                    "{{pecaId}}",
-                    "movimentacoes"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"tipo\": \"ENTRADA\",\n  \"quantidade\": 20,\n  \"motivo\": \"Compra\",\n  \"custoUnitario\": \"18.00\",\n  \"documentoFiscal\": \"NF 12345\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "name": "Listar movimentações",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/pecas/{{pecaId}}/movimentacoes",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "pecas",
-                    "{{pecaId}}",
-                    "movimentacoes"
-                  ]
-                }
-              }
-            },
-            {
-              "name": "Inativar peça",
-              "request": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/pecas/{{pecaId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "pecas",
-                    "{{pecaId}}"
-                  ]
-                }
-              }
-            }
-          ]
-        },
-        {
-          "name": "Ordens de Serviço",
-          "item": [
-            {
-              "name": "Abrir OS (cliente e veículo novos)",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}",
-                    "description": "Gerado a cada envio"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/ordens-servico",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "ordens-servico"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"documentoCliente\": \"11144477735\",\n  \"novoCliente\": {\n    \"nome\": \"Maria Souza\",\n    \"email\": \"maria@email.com\"\n  },\n  \"novoVeiculo\": {\n    \"placa\": \"QWE1234\",\n    \"marca\": \"Fiat\",\n    \"modelo\": \"Uno\",\n    \"ano\": 2015\n  },\n  \"itens\": [\n    {\n      \"tipo\": \"SERVICO\",\n      \"referenciaId\": \"{{servicoId}}\",\n      \"quantidade\": 1\n    },\n    {\n      \"tipo\": \"PECA\",\n      \"referenciaId\": \"{{pecaId}}\",\n      \"quantidade\": 1\n    }\n  ],\n  \"relatoCliente\": \"Barulho ao frear\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "pm.test(\"Status 201\", () => pm.response.to.have.status(201));",
-                      "if (pm.response.code < 300) pm.collectionVariables.set(\"osId\", pm.response.json().id);",
-                      "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "Listar OS",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/ordens-servico?status=RECEBIDA&status=EM_EXECUCAO",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "ordens-servico"
-                  ],
-                  "query": [
-                    {
-                      "key": "status",
-                      "value": "RECEBIDA"
-                    },
-                    {
-                      "key": "status",
-                      "value": "EM_EXECUCAO"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "Detalhar OS",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "ordens-servico",
-                    "{{osId}}"
-                  ]
-                }
-              }
-            },
-            {
-              "name": "Incluir item",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}",
-                    "description": "Gerado a cada envio"
-                  },
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}/itens",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "ordens-servico",
-                    "{{osId}}",
-                    "itens"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"tipo\": \"SERVICO\",\n  \"referenciaId\": \"{{servicoId}}\",\n  \"quantidade\": 1\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "if (pm.response.code < 300) { const itens = pm.response.json().itens; pm.collectionVariables.set(\"itemId\", itens[itens.length - 1].id); }",
-                      "const etag = pm.response.headers.get(\"ETag\"); if (etag) pm.collectionVariables.set(\"etag\", etag);"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "Remover item",
-              "request": {
-                "method": "DELETE",
-                "header": [
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}/itens/{{itemId}}",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "ordens-servico",
-                    "{{osId}}",
-                    "itens",
-                    "{{itemId}}"
-                  ]
-                }
-              }
-            },
-            {
-              "name": "Iniciar diagnóstico",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}/diagnostico",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "ordens-servico",
-                    "{{osId}}",
-                    "diagnostico"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"observacao\": \"Pastilhas gastas\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "name": "Enviar orçamento",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}",
-                    "description": "Gerado a cada envio"
-                  },
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}/orcamento/envio",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "ordens-servico",
-                    "{{osId}}",
-                    "orcamento",
-                    "envio"
-                  ]
-                }
-              }
-            },
-            {
-              "name": "Finalizar execução",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}/finalizacao",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "ordens-servico",
-                    "{{osId}}",
-                    "finalizacao"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"observacao\": \"Serviço concluído\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                }
-              }
-            },
-            {
-              "name": "Registrar entrega",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "If-Match",
-                    "value": "{{etag}}",
-                    "description": "ETag da última resposta (salvo automaticamente)"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/ordens-servico/{{osId}}/entrega",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "ordens-servico",
-                    "{{osId}}",
-                    "entrega"
-                  ]
-                }
-              }
-            }
-          ]
-        },
-        {
-          "name": "Portal do Cliente",
-          "item": [
-            {
-              "name": "Solicitar código de acesso (OTP)",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/portal/autenticacao",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "portal",
-                    "autenticacao"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"codigoAcompanhamento\": \"OS-7K2M9QXAHT\",\n  \"documento\": \"11144477735\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "auth": {
-                  "type": "noauth"
-                }
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "if (pm.response.code === 202) pm.collectionVariables.set(\"desafioId\", pm.response.json().desafioId);"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "Validar código e obter token",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/portal/autenticacao/{{desafioId}}/verificacao",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "portal",
-                    "autenticacao",
-                    "{{desafioId}}",
-                    "verificacao"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"codigo\": \"123456\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "auth": {
-                  "type": "noauth"
-                }
-              },
-              "event": [
-                {
-                  "listen": "test",
-                  "script": {
-                    "type": "text/javascript",
-                    "exec": [
-                      "if (pm.response.code === 200) pm.collectionVariables.set(\"clienteToken\", pm.response.json().accessToken);"
-                    ]
-                  }
-                }
-              ]
-            },
-            {
-              "name": "Acompanhar OS",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/portal/ordem-servico",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "portal",
-                    "ordem-servico"
-                  ]
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{clienteToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "Aprovar orçamento",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}",
-                    "description": "Gerado a cada envio"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/portal/ordem-servico/orcamento/decisao",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "portal",
-                    "ordem-servico",
-                    "orcamento",
-                    "decisao"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"decisao\": \"APROVAR\",\n  \"versaoOrcamento\": 1\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{clienteToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            },
-            {
-              "name": "Recusar orçamento",
-              "request": {
-                "method": "POST",
-                "header": [
-                  {
-                    "key": "Content-Type",
-                    "value": "application/json"
-                  },
-                  {
-                    "key": "Idempotency-Key",
-                    "value": "{{$guid}}",
-                    "description": "Gerado a cada envio"
-                  }
-                ],
-                "url": {
-                  "raw": "{{baseUrl}}/portal/ordem-servico/orcamento/decisao",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "portal",
-                    "ordem-servico",
-                    "orcamento",
-                    "decisao"
-                  ]
-                },
-                "body": {
-                  "mode": "raw",
-                  "raw": "{\n  \"decisao\": \"RECUSAR\",\n  \"versaoOrcamento\": 1,\n  \"comentario\": \"Fica para depois\"\n}",
-                  "options": {
-                    "raw": {
-                      "language": "json"
-                    }
-                  }
-                },
-                "auth": {
-                  "type": "bearer",
-                  "bearer": [
-                    {
-                      "key": "token",
-                      "value": "{{clienteToken}}",
-                      "type": "string"
-                    }
-                  ]
-                }
-              }
-            }
-          ]
-        },
-        {
-          "name": "Métricas",
-          "item": [
-            {
-              "name": "Tempo médio de execução",
-              "request": {
-                "method": "GET",
-                "header": [],
-                "url": {
-                  "raw": "{{baseUrl}}/metricas/tempo-medio-execucao?dataInicio=2026-01-01&dataFim=2026-12-31",
-                  "host": [
-                    "{{baseUrl}}"
-                  ],
-                  "path": [
-                    "metricas",
-                    "tempo-medio-execucao"
-                  ],
-                  "query": [
-                    {
-                      "key": "dataInicio",
-                      "value": "2026-01-01"
-                    },
-                    {
-                      "key": "dataFim",
-                      "value": "2026-12-31"
-                    }
-                  ]
-                }
-              }
-            }
-          ]
+            "description": "**Perfil:** sem token"
+          }
         }
       ]
+    },
+    {
+      "name": "2. Usuários",
+      "description": "Usuários internos (ADMIN e MECANICO) são criados pelo ADMIN. Senhas em BCrypt.",
+      "item": [
+        {
+          "name": "Cadastrar mecânico",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('mecanicoId', pm.response.json().id);",
+                  "pm.test('Não devolve a senha', () => pm.expect(pm.response.json()).to.not.have.property('senha'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usuarios",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Marcos Mecânico\",\n  \"email\": \"marcos.{{sufixo}}@oficina.com\",\n  \"telefone\": \"+5511999990002\",\n  \"senha\": \"senhaMecanico1\",\n  \"perfil\": \"MECANICO\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Login MECANICO",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('tokenMecanico', pm.response.json().accessToken);",
+                  "pm.test('perfil = MECANICO', () => pm.expect(pm.response.json().perfil).to.eql(\"MECANICO\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "**Perfil:** sem token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"marcos.{{sufixo}}@oficina.com\",\n  \"senha\": \"senhaMecanico1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Meus dados (mecânico)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('perfil = MECANICO', () => pm.expect(pm.response.json().perfil).to.eql(\"MECANICO\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usuarios/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios",
+                "me"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "Listar mecânicos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usuarios?perfil=MECANICO",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios"
+              ],
+              "query": [
+                {
+                  "key": "perfil",
+                  "value": "MECANICO"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN"
+          }
+        },
+        {
+          "name": "Detalhar usuário",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usuarios/{{mecanicoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios",
+                "{{mecanicoId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN"
+          }
+        },
+        {
+          "name": "[acesso negado] Mecânico lista usuários",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usuarios",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "[erro] E-mail já cadastrado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('codigo EMAIL_JA_CADASTRADO', () => pm.expect(pm.response.json().codigo).to.eql('EMAIL_JA_CADASTRADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usuarios",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Outro\",\n  \"email\": \"MARCOS.{{sufixo}}@oficina.com\",\n  \"telefone\": \"+5511999990003\",\n  \"senha\": \"senhaForte1\",\n  \"perfil\": \"ADMIN\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[erro] Perfil CLIENTE não é aceito aqui",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/usuarios",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "usuarios"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Cliente\",\n  \"email\": \"cli.{{sufixo}}@oficina.com\",\n  \"telefone\": \"+5511999990004\",\n  \"senha\": \"senhaForte1\",\n  \"perfil\": \"CLIENTE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Clientes",
+      "description": "O cliente pode se cadastrar sozinho (sem token); ADMIN e MECANICO também cadastram no balcão. O CLIENTE só vê e altera o próprio cadastro. CPF/CNPJ é gravado criptografado.",
+      "item": [
+        {
+          "name": "Autocadastro de cliente (sem token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('clienteId', pm.response.json().id);",
+                  "pm.test('tipoDocumento = CPF', () => pm.expect(pm.response.json().tipoDocumento).to.eql(\"CPF\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "**Perfil:** sem token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento\": \"{{cpf}}\",\n  \"nome\": \"João da Silva\",\n  \"email\": \"joao.{{sufixo}}@email.com\",\n  \"telefone\": \"+5511988887777\",\n  \"senha\": \"senhaCliente1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Login CLIENTE",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('tokenCliente', pm.response.json().accessToken);",
+                  "pm.test('perfil = CLIENTE', () => pm.expect(pm.response.json().perfil).to.eql(\"CLIENTE\"));",
+                  "pm.test('Token traz o clienteId', () => pm.expect(pm.response.json().clienteId).to.eql(Number(pm.collectionVariables.get('clienteId'))));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth",
+                "login"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "**Perfil:** sem token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"joao.{{sufixo}}@email.com\",\n  \"senha\": \"senhaCliente1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cadastrar segundo cliente (balcão, mecânico)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('cliente2Id', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento\": \"{{cpf2}}\",\n  \"nome\": \"Maria Souza\",\n  \"email\": \"maria.{{sufixo}}@email.com\",\n  \"telefone\": \"+5511966665555\",\n  \"senha\": \"senhaCliente2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cadastrar terceiro cliente (sem vínculos)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('cliente3Id', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN\n\nUsado no fim para testar a remoção com sucesso.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento\": \"{{cpf3}}\",\n  \"nome\": \"Pedro Lima\",\n  \"email\": \"pedro.{{sufixo}}@email.com\",\n  \"telefone\": \"+5511955554444\",\n  \"senha\": \"senhaCliente3\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Listar clientes (mecânico)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes?nome=Silva",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ],
+              "query": [
+                {
+                  "key": "nome",
+                  "value": "Silva"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "Pesquisar por CPF/CNPJ",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('nome = João da Silva', () => pm.expect(pm.response.json().nome).to.eql(\"Jo\\u00e3o da Silva\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes/pesquisa",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes",
+                "pesquisa"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento\": \"{{cpf}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cliente vê o próprio cadastro",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes/{{clienteId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes",
+                "{{clienteId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE"
+          }
+        },
+        {
+          "name": "Cliente atualiza o próprio contato",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('nome = João Silva', () => pm.expect(pm.response.json().nome).to.eql(\"Jo\\u00e3o Silva\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes/{{clienteId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes",
+                "{{clienteId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"João Silva\",\n  \"email\": \"joao.{{sufixo}}@email.com\",\n  \"telefone\": \"+5511977776666\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[acesso negado] Cliente vê outro cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('codigo RECURSO_NAO_ENCONTRADO', () => pm.expect(pm.response.json().codigo).to.eql('RECURSO_NAO_ENCONTRADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes/{{cliente2Id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes",
+                "{{cliente2Id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE\n\nRecurso de outro cliente responde 404, como se não existisse (evita enumeração)."
+          }
+        },
+        {
+          "name": "[acesso negado] Cliente lista clientes",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE"
+          }
+        },
+        {
+          "name": "[acesso negado] Cliente autenticado cadastra outro cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento\": \"{{cpf3}}\",\n  \"nome\": \"Outro\",\n  \"email\": \"outro.{{sufixo}}@email.com\",\n  \"telefone\": \"+5511988887777\",\n  \"senha\": \"senhaCliente1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[acesso negado] Mecânico remove cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes/{{cliente3Id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes",
+                "{{cliente3Id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "[erro] CPF já cadastrado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('codigo DOCUMENTO_JA_CADASTRADO', () => pm.expect(pm.response.json().codigo).to.eql('DOCUMENTO_JA_CADASTRADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento\": \"{{cpf}}\",\n  \"nome\": \"Outro\",\n  \"email\": \"dup.{{sufixo}}@email.com\",\n  \"telefone\": \"+5511988887777\",\n  \"senha\": \"senhaCliente1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[erro] CPF inválido",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));",
+                  "pm.test('codigo VALIDACAO', () => pm.expect(pm.response.json().codigo).to.eql('VALIDACAO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes"
+              ]
+            },
+            "auth": {
+              "type": "noauth"
+            },
+            "description": "**Perfil:** sem token",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"documento\": \"52998224700\",\n  \"nome\": \"Inválido\",\n  \"email\": \"inv.{{sufixo}}@email.com\",\n  \"telefone\": \"+5511988887777\",\n  \"senha\": \"senhaCliente1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Veículos",
+      "description": "O CLIENTE cadastra, vê e altera só os próprios veículos. Placa gravada criptografada; a busca por placa usa o índice cego.",
+      "item": [
+        {
+          "name": "Cliente cadastra o próprio veículo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('veiculoId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/veiculos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "veiculos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"placa\": \"{{placa}}\",\n  \"marca\": \"Volkswagen\",\n  \"modelo\": \"Gol 1.6\",\n  \"ano\": 2019,\n  \"cor\": \"Prata\",\n  \"quilometragem\": 85000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Mecânico cadastra veículo do segundo cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('veiculo2Id', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/veiculos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "veiculos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": {{cliente2Id}},\n  \"placa\": \"{{placa2}}\",\n  \"marca\": \"Fiat\",\n  \"modelo\": \"Argo\",\n  \"ano\": 2022\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cliente lista os próprios veículos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Só registros do próprio cliente', () => pm.response.json().content.forEach(item => pm.expect(item.clienteId).to.eql(Number(pm.collectionVariables.get('clienteId')))));",
+                  "pm.test('Um veículo', () => pm.expect(pm.response.json().totalElements).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/veiculos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "veiculos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE"
+          }
+        },
+        {
+          "name": "Buscar veículo pela placa",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Encontra pela placa', () => pm.expect(pm.response.json().totalElements).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/veiculos?placa={{placa}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "veiculos"
+              ],
+              "query": [
+                {
+                  "key": "placa",
+                  "value": "{{placa}}"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "Mecânico atualiza quilometragem",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('quilometragem = 90000', () => pm.expect(pm.response.json().quilometragem).to.eql(90000));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/veiculos/{{veiculoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "veiculos",
+                "{{veiculoId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"placa\": \"{{placa}}\",\n  \"marca\": \"Volkswagen\",\n  \"modelo\": \"Gol 1.6\",\n  \"ano\": 2019,\n  \"cor\": \"Prata\",\n  \"quilometragem\": 90000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cliente vê o próprio veículo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/veiculos/{{veiculoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "veiculos",
+                "{{veiculoId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE"
+          }
+        },
+        {
+          "name": "[acesso negado] Cliente vê veículo de outro",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('codigo RECURSO_NAO_ENCONTRADO', () => pm.expect(pm.response.json().codigo).to.eql('RECURSO_NAO_ENCONTRADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/veiculos/{{veiculo2Id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "veiculos",
+                "{{veiculo2Id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE\n\nRecurso de outro cliente responde 404, como se não existisse (evita enumeração)."
+          }
+        },
+        {
+          "name": "[acesso negado] Cliente cadastra veículo para outro cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/veiculos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "veiculos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": {{cliente2Id}},\n  \"placa\": \"ZZZ9Z99\",\n  \"marca\": \"Fiat\",\n  \"modelo\": \"Uno\",\n  \"ano\": 2010\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[acesso negado] Mecânico remove veículo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/veiculos/{{veiculoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "veiculos",
+                "{{veiculoId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "[erro] Placa já cadastrada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('codigo PLACA_JA_CADASTRADA', () => pm.expect(pm.response.json().codigo).to.eql('PLACA_JA_CADASTRADA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/veiculos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "veiculos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"placa\": \"{{placa}}\",\n  \"marca\": \"Fiat\",\n  \"modelo\": \"Uno\",\n  \"ano\": 2010\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Serviços",
+      "description": "Catálogo de mão de obra: só o ADMIN mantém; todos os perfis consultam.",
+      "item": [
+        {
+          "name": "Cadastrar serviço",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('servicoId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/servicos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "servicos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Troca de óleo\",\n  \"descricao\": \"Óleo 5W30 + mão de obra\",\n  \"precoBase\": \"120.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cliente consulta o catálogo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/servicos?nome=leo",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "servicos"
+              ],
+              "query": [
+                {
+                  "key": "nome",
+                  "value": "leo"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE"
+          }
+        },
+        {
+          "name": "Mecânico detalha serviço",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/servicos/{{servicoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "servicos",
+                "{{servicoId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "Atualizar serviço",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/servicos/{{servicoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "servicos",
+                "{{servicoId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Troca de óleo\",\n  \"descricao\": \"Óleo 5W30 + filtro + mão de obra\",\n  \"precoBase\": \"120.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[acesso negado] Mecânico cadastra serviço",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/servicos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "servicos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Alinhamento\",\n  \"precoBase\": \"80.00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[erro] Preço fora do formato",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 400', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/servicos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "servicos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nome\": \"Alinhamento\",\n  \"precoBase\": \"80,5\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. Peças e estoque",
+      "description": "ADMIN e MECANICO gerenciam o estoque; só o ADMIN remove peças. O CLIENTE não acessa (há preço de custo).",
+      "item": [
+        {
+          "name": "Mecânico cadastra peça",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('pecaId', pm.response.json().id);",
+                  "pm.test('abaixoDoMinimo = True', () => pm.expect(pm.response.json().abaixoDoMinimo).to.eql(true));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"FLT-{{sufixo}}\",\n  \"nome\": \"Filtro de óleo\",\n  \"unidadeMedida\": \"UN\",\n  \"precoCusto\": \"20.00\",\n  \"precoVenda\": \"35.50\",\n  \"estoqueMinimo\": 5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Entrada de estoque",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('quantidadeEstoque = 20', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(20));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaId}}/movimentacoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaId}}",
+                "movimentacoes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"ENTRADA\",\n  \"quantidade\": 20\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Saída de estoque",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('quantidadeEstoque = 17.5', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(17.5));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaId}}/movimentacoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaId}}",
+                "movimentacoes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"SAIDA\",\n  \"quantidade\": 2.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Ajuste de inventário",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('quantidadeEstoque = 10', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(10));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaId}}/movimentacoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaId}}",
+                "movimentacoes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"AJUSTE_INVENTARIO\",\n  \"quantidade\": 10\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[erro] Saída maior que o saldo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('codigo ESTOQUE_INSUFICIENTE', () => pm.expect(pm.response.json().codigo).to.eql('ESTOQUE_INSUFICIENTE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaId}}/movimentacoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaId}}",
+                "movimentacoes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"SAIDA\",\n  \"quantidade\": 999\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Listar peças abaixo do mínimo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas?abaixoDoMinimo=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas"
+              ],
+              "query": [
+                {
+                  "key": "abaixoDoMinimo",
+                  "value": "true"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "Atualizar peça",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('nome = Filtro de óleo Mann', () => pm.expect(pm.response.json().nome).to.eql(\"Filtro de \\u00f3leo Mann\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"FLT-{{sufixo}}\",\n  \"nome\": \"Filtro de óleo Mann\",\n  \"unidadeMedida\": \"UN\",\n  \"precoCusto\": \"20.00\",\n  \"precoVenda\": \"35.50\",\n  \"estoqueMinimo\": 4\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[acesso negado] Cliente lista peças",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE"
+          }
+        },
+        {
+          "name": "[acesso negado] Mecânico remove peça",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "[erro] SKU já cadastrado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('codigo SKU_JA_CADASTRADO', () => pm.expect(pm.response.json().codigo).to.eql('SKU_JA_CADASTRADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"FLT-{{sufixo}}\",\n  \"nome\": \"Outro filtro\",\n  \"unidadeMedida\": \"UN\",\n  \"precoCusto\": \"20.00\",\n  \"precoVenda\": \"35.50\",\n  \"estoqueMinimo\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Ordens de serviço",
+      "description": "ADMIN e MECANICO abrem e executam a OS (ABERTA → EM_ANDAMENTO → CONCLUIDA → ENTREGUE). O CLIENTE acompanha só as próprias OS.",
+      "item": [
+        {
+          "name": "Mecânico abre OS com serviço e peça",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('osId', pm.response.json().id);",
+                  "pm.test('status = ABERTA', () => pm.expect(pm.response.json().status).to.eql(\"ABERTA\"));",
+                  "pm.test('valorTotal = 191.00', () => pm.expect(pm.response.json().valorTotal).to.eql(\"191.00\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO\n\nServiço pelo preço base (120.00) + 2 × peça (35.50) = 191.00. Baixa 2 unidades do estoque.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"veiculoId\": {{veiculoId}},\n  \"descricaoProblema\": \"Barulho no motor\",\n  \"servicos\": [\n    {\n      \"servicoId\": {{servicoId}}\n    }\n  ],\n  \"pecas\": [\n    {\n      \"pecaInsumoId\": {{pecaId}},\n      \"quantidade\": 2\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Saldo da peça após a abertura",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('quantidadeEstoque = 8', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(8));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "Mecânico abre OS do segundo cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('os2Id', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": {{cliente2Id}},\n  \"veiculoId\": {{veiculo2Id}},\n  \"descricaoProblema\": \"Revisão\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Cliente acompanha a própria OS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = ABERTA', () => pm.expect(pm.response.json().status).to.eql(\"ABERTA\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE"
+          }
+        },
+        {
+          "name": "Cliente lista as próprias OS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Só registros do próprio cliente', () => pm.response.json().content.forEach(item => pm.expect(item.clienteId).to.eql(Number(pm.collectionVariables.get('clienteId')))));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE"
+          }
+        },
+        {
+          "name": "[acesso negado] Cliente vê OS de outro cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('codigo RECURSO_NAO_ENCONTRADO', () => pm.expect(pm.response.json().codigo).to.eql('RECURSO_NAO_ENCONTRADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{os2Id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE\n\nRecurso de outro cliente responde 404, como se não existisse (evita enumeração)."
+          }
+        },
+        {
+          "name": "[acesso negado] Cliente abre OS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"veiculoId\": {{veiculoId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[erro] Veículo de outro cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('codigo VEICULO_NAO_PERTENCE_AO_CLIENTE', () => pm.expect(pm.response.json().codigo).to.eql('VEICULO_NAO_PERTENCE_AO_CLIENTE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": {{cliente2Id}},\n  \"veiculoId\": {{veiculoId}}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[erro] Estoque insuficiente (nada é gravado)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('codigo ESTOQUE_INSUFICIENTE', () => pm.expect(pm.response.json().codigo).to.eql('ESTOQUE_INSUFICIENTE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"veiculoId\": {{veiculoId}},\n  \"pecas\": [\n    {\n      \"pecaInsumoId\": {{pecaId}},\n      \"quantidade\": 1000\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Incluir peça na OS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('itemPecaId', pm.response.json().pecas.slice(-1)[0].id);",
+                  "pm.test('valorTotal = 244.25', () => pm.expect(pm.response.json().valorTotal).to.eql(\"244.25\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/pecas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "pecas"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pecaInsumoId\": {{pecaId}},\n  \"quantidade\": 1.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Remover peça da OS (devolve ao estoque)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('valorTotal = 191.00', () => pm.expect(pm.response.json().valorTotal).to.eql(\"191.00\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/pecas/{{itemPecaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "pecas",
+                "{{itemPecaId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "Incluir serviço com preço negociado",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('itemServicoId', pm.response.json().servicos.slice(-1)[0].id);",
+                  "pm.test('valorTotal = 290.90', () => pm.expect(pm.response.json().valorTotal).to.eql(\"290.90\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/servicos",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "servicos"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"servicoId\": {{servicoId}},\n  \"precoFinal\": \"99.90\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Remover serviço da OS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('valorTotal = 191.00', () => pm.expect(pm.response.json().valorTotal).to.eql(\"191.00\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/servicos/{{itemServicoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "servicos",
+                "{{itemServicoId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "[erro] Finalizar sem diagnóstico",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('codigo OS_TRANSICAO_INVALIDA', () => pm.expect(pm.response.json().codigo).to.eql('OS_TRANSICAO_INVALIDA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/finalizacao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "finalizacao"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "[acesso negado] Cliente registra diagnóstico",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/diagnostico",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "diagnostico"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"diagnosticoTecnico\": \"Tentativa\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Registrar diagnóstico",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = EM_ANDAMENTO', () => pm.expect(pm.response.json().status).to.eql(\"EM_ANDAMENTO\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/diagnostico",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "diagnostico"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"diagnosticoTecnico\": \"Filtro saturado e óleo vencido\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Finalizar",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = CONCLUIDA', () => pm.expect(pm.response.json().status).to.eql(\"CONCLUIDA\"));",
+                  "pm.test('Registra dataConclusao', () => pm.expect(pm.response.json().dataConclusao).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/finalizacao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "finalizacao"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "[erro] Incluir item depois de concluída",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('codigo OS_ITEM_NAO_EDITAVEL', () => pm.expect(pm.response.json().codigo).to.eql('OS_ITEM_NAO_EDITAVEL'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/pecas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "pecas"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pecaInsumoId\": {{pecaId}},\n  \"quantidade\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Entregar veículo",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = ENTREGUE', () => pm.expect(pm.response.json().status).to.eql(\"ENTREGUE\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/entrega",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "entrega"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "Cliente vê a OS entregue",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Uma OS entregue', () => pm.expect(pm.response.json().totalElements).to.eql(1));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico?status=ENTREGUE",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "ENTREGUE"
+                }
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE"
+          }
+        }
+      ]
+    },
+    {
+      "name": "8. Remoções (ADMIN)",
+      "description": "Só o ADMIN remove. Registros usados em alguma OS são bloqueados (409 REGISTRO_EM_USO).",
+      "item": [
+        {
+          "name": "[erro] Remover veículo com OS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('codigo REGISTRO_EM_USO', () => pm.expect(pm.response.json().codigo).to.eql('REGISTRO_EM_USO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/veiculos/{{veiculoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "veiculos",
+                "{{veiculoId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN"
+          }
+        },
+        {
+          "name": "[erro] Remover serviço usado em OS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('codigo REGISTRO_EM_USO', () => pm.expect(pm.response.json().codigo).to.eql('REGISTRO_EM_USO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/servicos/{{servicoId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "servicos",
+                "{{servicoId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN"
+          }
+        },
+        {
+          "name": "[erro] Remover peça usada em OS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('codigo REGISTRO_EM_USO', () => pm.expect(pm.response.json().codigo).to.eql('REGISTRO_EM_USO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN"
+          }
+        },
+        {
+          "name": "[erro] Remover cliente com veículos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('codigo REGISTRO_EM_USO', () => pm.expect(pm.response.json().codigo).to.eql('REGISTRO_EM_USO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes/{{clienteId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes",
+                "{{clienteId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN"
+          }
+        },
+        {
+          "name": "Remover cliente sem vínculos",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204', () => pm.response.to.have.status(204));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes/{{cliente3Id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes",
+                "{{cliente3Id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN\n\nRemove também o usuário do cliente."
+          }
+        },
+        {
+          "name": "Cliente removido não existe mais",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('codigo RECURSO_NAO_ENCONTRADO', () => pm.expect(pm.response.json().codigo).to.eql('RECURSO_NAO_ENCONTRADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/clientes/{{cliente3Id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "clientes",
+                "{{cliente3Id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN"
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8080/api/v1"
+    },
+    {
+      "key": "adminEmail",
+      "value": "admin@oficina.com"
+    },
+    {
+      "key": "adminSenha",
+      "value": "admin12345"
+    },
+    {
+      "key": "tokenAdmin",
+      "value": ""
+    },
+    {
+      "key": "tokenMecanico",
+      "value": ""
+    },
+    {
+      "key": "tokenCliente",
+      "value": ""
+    },
+    {
+      "key": "sufixo",
+      "value": ""
+    },
+    {
+      "key": "cpf",
+      "value": ""
+    },
+    {
+      "key": "cpf2",
+      "value": ""
+    },
+    {
+      "key": "cpf3",
+      "value": ""
+    },
+    {
+      "key": "placa",
+      "value": ""
+    },
+    {
+      "key": "placa2",
+      "value": ""
+    },
+    {
+      "key": "mecanicoId",
+      "value": ""
+    },
+    {
+      "key": "clienteId",
+      "value": ""
+    },
+    {
+      "key": "cliente2Id",
+      "value": ""
+    },
+    {
+      "key": "cliente3Id",
+      "value": ""
+    },
+    {
+      "key": "veiculoId",
+      "value": ""
+    },
+    {
+      "key": "veiculo2Id",
+      "value": ""
+    },
+    {
+      "key": "servicoId",
+      "value": ""
+    },
+    {
+      "key": "pecaId",
+      "value": ""
+    },
+    {
+      "key": "osId",
+      "value": ""
+    },
+    {
+      "key": "os2Id",
+      "value": ""
+    },
+    {
+      "key": "itemPecaId",
+      "value": ""
+    },
+    {
+      "key": "itemServicoId",
+      "value": ""
     }
   ]
 }

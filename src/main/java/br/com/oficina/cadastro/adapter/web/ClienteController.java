@@ -1,46 +1,56 @@
 package br.com.oficina.cadastro.adapter.web;
 
+import br.com.oficina.cadastro.application.dto.AtualizarClienteInput;
 import br.com.oficina.cadastro.application.dto.CadastrarClienteInput;
 import br.com.oficina.cadastro.application.dto.ClienteOutput;
-import br.com.oficina.cadastro.application.dto.EnderecoData;
+import br.com.oficina.cadastro.application.usecase.AtualizarClienteUseCase;
 import br.com.oficina.cadastro.application.usecase.CadastrarClienteUseCase;
+import br.com.oficina.cadastro.application.usecase.ListarClientesUseCase;
 import br.com.oficina.cadastro.application.usecase.ObterClienteUseCase;
+import br.com.oficina.cadastro.application.usecase.PesquisarClientePorDocumentoUseCase;
+import br.com.oficina.cadastro.application.usecase.RemoverClienteUseCase;
 import br.com.oficina.contract.api.ClientesApi;
+import br.com.oficina.contract.model.AtualizarClienteRequestDto;
 import br.com.oficina.contract.model.ClienteRequestDto;
 import br.com.oficina.contract.model.ClienteResponseDto;
-import br.com.oficina.contract.model.EnderecoDTODto;
+import br.com.oficina.contract.model.PaginaClientesDto;
+import br.com.oficina.contract.model.PesquisaClienteRequestDto;
 import br.com.oficina.contract.model.TipoDocumentoDto;
+import br.com.oficina.shared.adapter.web.SolicitanteAtual;
+import br.com.oficina.shared.application.dto.PageQuery;
+import br.com.oficina.shared.application.dto.PageResult;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
 
-import java.time.Instant;
-import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
-/**
- * Adapter de entrada de {@code /clientes}. Implementa as operações da interface gerada {@link ClientesApi};
- * as que não estão aqui (listar, pesquisar, atualizar, remover) respondem 501 pelo método default.
- */
 @RestController
 public class ClienteController implements ClientesApi {
 
     private final CadastrarClienteUseCase cadastrarCliente;
     private final ObterClienteUseCase obterCliente;
+    private final ListarClientesUseCase listarClientes;
+    private final PesquisarClientePorDocumentoUseCase pesquisarCliente;
+    private final AtualizarClienteUseCase atualizarCliente;
+    private final RemoverClienteUseCase removerCliente;
 
-    public ClienteController(CadastrarClienteUseCase cadastrarCliente, ObterClienteUseCase obterCliente) {
+    public ClienteController(CadastrarClienteUseCase cadastrarCliente, ObterClienteUseCase obterCliente,
+                             ListarClientesUseCase listarClientes, PesquisarClientePorDocumentoUseCase pesquisarCliente,
+                             AtualizarClienteUseCase atualizarCliente, RemoverClienteUseCase removerCliente) {
         this.cadastrarCliente = cadastrarCliente;
         this.obterCliente = obterCliente;
+        this.listarClientes = listarClientes;
+        this.pesquisarCliente = pesquisarCliente;
+        this.atualizarCliente = atualizarCliente;
+        this.removerCliente = removerCliente;
     }
 
     @Override
     public ResponseEntity<ClienteResponseDto> cadastrarCliente(UUID idempotencyKey, ClienteRequestDto request) {
-        // TODO: usar a Idempotency-Key para não cadastrar duas vezes em reenvios.
-        var input = new CadastrarClienteInput(request.getDocumento(), request.getNome(), request.getEmail(),
-                request.getTelefone(), toEnderecoData(request.getEndereco()));
-        ClienteOutput cliente = cadastrarCliente.execute(input);
-
+        ClienteOutput cliente = cadastrarCliente.execute(new CadastrarClienteInput(request.getDocumento(),
+                request.getNome(), request.getEmail(), request.getTelefone(), request.getSenha()), SolicitanteAtual.get());
         var location = ServletUriComponentsBuilder.fromCurrentRequest()
                 .path("/{id}")
                 .buildAndExpand(cliente.id())
@@ -49,48 +59,49 @@ public class ClienteController implements ClientesApi {
     }
 
     @Override
-    public ResponseEntity<ClienteResponseDto> obterCliente(UUID clienteId) {
-        return ResponseEntity.ok(toResponse(obterCliente.execute(clienteId)));
+    public ResponseEntity<ClienteResponseDto> obterCliente(Integer clienteId) {
+        return ResponseEntity.ok(toResponse(obterCliente.execute(clienteId, SolicitanteAtual.get())));
     }
 
-    // ─── Conversões entre os DTOs do contrato (HTTP) e os DTOs do caso de uso ───
+    @Override
+    public ResponseEntity<PaginaClientesDto> listarClientes(Integer page, Integer size, String nome) {
+        PageResult<ClienteOutput> pagina = listarClientes.execute(nome, PageQuery.of(page, size));
+        return ResponseEntity.ok(new PaginaClientesDto()
+                .page(pagina.page())
+                .size(pagina.size())
+                .totalElements(pagina.totalElements())
+                .totalPages(pagina.totalPages())
+                .content(pagina.content().stream().map(ClienteController::toResponse).toList()));
+    }
 
-    private static EnderecoData toEnderecoData(EnderecoDTODto endereco) {
-        if (endereco == null) {
-            return null;
-        }
-        return new EnderecoData(endereco.getLogradouro(), endereco.getNumero(), endereco.getComplemento(),
-                endereco.getBairro(), endereco.getCidade(), endereco.getUf(), endereco.getCep());
+    @Override
+    public ResponseEntity<ClienteResponseDto> pesquisarClientePorDocumento(PesquisaClienteRequestDto request) {
+        return ResponseEntity.ok(toResponse(pesquisarCliente.execute(request.getDocumento())));
+    }
+
+    @Override
+    public ResponseEntity<ClienteResponseDto> atualizarCliente(Integer clienteId,
+                                                               AtualizarClienteRequestDto request) {
+        ClienteOutput cliente = atualizarCliente.execute(new AtualizarClienteInput(clienteId, request.getNome(),
+                request.getEmail(), request.getTelefone()), SolicitanteAtual.get());
+        return ResponseEntity.ok(toResponse(cliente));
+    }
+
+    @Override
+    public ResponseEntity<Void> removerCliente(Integer clienteId) {
+        removerCliente.execute(clienteId);
+        return ResponseEntity.noContent().build();
     }
 
     private static ClienteResponseDto toResponse(ClienteOutput cliente) {
         return new ClienteResponseDto()
                 .id(cliente.id())
+                .usuarioId(cliente.usuarioId())
                 .tipoDocumento(TipoDocumentoDto.fromValue(cliente.tipoDocumento()))
                 .documento(cliente.documento())
                 .nome(cliente.nome())
                 .email(cliente.email())
                 .telefone(cliente.telefone())
-                .endereco(toEnderecoDto(cliente.endereco()))
-                .criadoEm(toOffsetDateTime(cliente.criadoEm()))
-                .atualizadoEm(toOffsetDateTime(cliente.atualizadoEm()));
-    }
-
-    private static EnderecoDTODto toEnderecoDto(EnderecoData endereco) {
-        if (endereco == null) {
-            return null;
-        }
-        return new EnderecoDTODto()
-                .logradouro(endereco.logradouro())
-                .numero(endereco.numero())
-                .complemento(endereco.complemento())
-                .bairro(endereco.bairro())
-                .cidade(endereco.cidade())
-                .uf(endereco.uf())
-                .cep(endereco.cep());
-    }
-
-    private static OffsetDateTime toOffsetDateTime(Instant instant) {
-        return instant == null ? null : instant.atOffset(ZoneOffset.UTC);
+                .criadoEm(cliente.criadoEm() == null ? null : cliente.criadoEm().atOffset(ZoneOffset.UTC));
     }
 }

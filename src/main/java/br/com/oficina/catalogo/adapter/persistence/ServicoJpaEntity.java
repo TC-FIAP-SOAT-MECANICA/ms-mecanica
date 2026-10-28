@@ -1,44 +1,34 @@
 package br.com.oficina.catalogo.adapter.persistence;
 
 import br.com.oficina.catalogo.domain.Servico;
+import br.com.oficina.shared.domain.valueobject.Dinheiro;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.GeneratedValue;
+import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 import java.math.BigDecimal;
-import java.util.UUID;
 
-/**
- * Representação da tabela {@code servico} para o JPA.
- *
- * <p>É uma classe separada da entidade de domínio {@link Servico} de propósito: as anotações de banco
- * ficam só aqui, e o domínio continua sem saber que existe JPA.
- */
 @Entity
-@Table(name = "servico")
+@Table(name = "servicos")
 class ServicoJpaEntity {
 
     @Id
-    private UUID id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Integer id;
 
-    @Column(nullable = false, length = 120)
+    @Column(nullable = false, length = 100)
     private String nome;
 
-    @Column(length = 500)
+    @Column(columnDefinition = "text")
     private String descricao;
 
-    @Column(nullable = false, precision = 11, scale = 2)
-    private BigDecimal preco;
-
-    @Column(name = "tempo_estimado_minutos", nullable = false)
-    private int tempoEstimadoMinutos;
-
-    @Column(nullable = false)
-    private boolean ativo;
+    @Column(name = "preco_base", nullable = false, precision = 10, scale = 2)
+    private BigDecimal precoBase;
 
     protected ServicoJpaEntity() {
-        // exigido pelo JPA
     }
 
     static ServicoJpaEntity from(Servico servico) {
@@ -46,9 +36,11 @@ class ServicoJpaEntity {
         entity.id = servico.id();
         entity.nome = servico.nome();
         entity.descricao = servico.descricao();
-        entity.preco = servico.preco().valor();
-        entity.tempoEstimadoMinutos = servico.tempoEstimadoMinutos();
-        entity.ativo = servico.ativo();
+        entity.precoBase = servico.precoBase().valor();
         return entity;
+    }
+
+    Servico toDomain() {
+        return Servico.restaurar(id, nome, descricao, new Dinheiro(precoBase));
     }
 }

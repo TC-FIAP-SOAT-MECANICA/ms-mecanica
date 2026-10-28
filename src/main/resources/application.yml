@@ -57,3 +57,18 @@ springdoc:
     enabled: false
   swagger-ui:
     url: /api/v1/oficina-mecanica-contract.yaml
+
+app:
+  security:
+    jwt:
+      segredo: ${JWT_SECRET:8knJh+1EbvI4VY/toJgDz4KYhpzo3nW4AS+lDqtsQeWHjNsatSyUgb4mAv3FzpED}
+      expiracao-minutos: ${JWT_EXPIRACAO_MINUTOS:60}
+      emissor: oficina-mecanica
+    crypto:
+      chave: ${CRYPTO_KEY:KdM4ZC9rO1S+SavWLowiGM+qHK/oIuMvm/3mCV9vYdU=}
+      chave-indice: ${CRYPTO_INDEX_KEY:4RImKsCnxbXnU3WRUS4TgvnEHrLQ9z4tgZgxevb2WiY=}
+  admin-inicial:
+    nome: Administrador
+    email: ${ADMIN_EMAIL:admin@oficina.com}
+    senha: ${ADMIN_SENHA:admin12345}
+    telefone: "+5511900000000"

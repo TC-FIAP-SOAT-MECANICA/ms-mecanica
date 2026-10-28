@@ -1,14 +1,30 @@
-package br.com.oficina.cadastro.adapter.persistence;
+package br.com.oficina.cadastro.adapter.persistence.cliente;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
+import org.springframework.data.jpa.repository.Query;
 
-import java.util.UUID;
+import java.util.Optional;
 
-/**
- * Repositório do Spring Data. O Spring gera a implementação a partir do nome dos métodos
- * ({@code existsByDocumento} vira {@code select ... where documento = ?}).
- */
-interface ClienteJpaRepository extends JpaRepository<ClienteJpaEntity, UUID> {
+interface ClienteJpaRepository extends JpaRepository<ClienteJpaEntity, Integer>,
+        JpaSpecificationExecutor<ClienteJpaEntity> {
 
-    boolean existsByDocumento(String documento);
+    @EntityGraph(attributePaths = "contato")
+    Optional<ClienteJpaEntity> findWithContatoById(Integer id);
+
+    @EntityGraph(attributePaths = "contato")
+    Optional<ClienteJpaEntity> findByCpfCnpjHash(String cpfCnpjHash);
+
+    boolean existsByCpfCnpjHash(String cpfCnpjHash);
+
+    @Query("select c.id from ClienteJpaEntity c where c.usuarioId = :usuarioId")
+    Optional<Integer> findIdByUsuarioId(Integer usuarioId);
+
+    @Override
+    @EntityGraph(attributePaths = "contato")
+    Page<ClienteJpaEntity> findAll(Specification<ClienteJpaEntity> spec, Pageable pageable);
 }

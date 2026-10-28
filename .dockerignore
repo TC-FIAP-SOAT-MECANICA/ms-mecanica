@@ -1,0 +1,14 @@
+target/
+data/
+logs/
+observability/
+postman/
+.git/
+.idea/
+.vscode/
+.claude/
+.agents/
+*.iml
+docker-compose*.yml
+Dockerfile
+README.md

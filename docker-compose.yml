@@ -1,4 +1,24 @@
 services:
+  app:
+    build: .
+    image: oficina-mecanica:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+      loki:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: postgres
+      DB_URL: jdbc:postgresql://postgres:5432/oficina
+      DB_USERNAME: oficina
+      DB_PASSWORD: oficina
+      LOKI_URL: http://loki:3100/loki/api/v1/push
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@oficina.com}
+      ADMIN_SENHA: ${ADMIN_SENHA:-admin12345}
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+
   postgres:
     image: postgres:16-alpine
     environment:
@@ -6,13 +26,18 @@ services:
       POSTGRES_USER: oficina
       POSTGRES_PASSWORD: oficina
     ports:
-      - "5432:5432"
+      - "5436:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oficina -d oficina"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:v3.5.0
-    profiles: [observability]
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=15d
@@ -23,20 +48,20 @@ services:
       - prometheus-data:/prometheus
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    restart: unless-stopped
 
   loki:
     image: grafana/loki:3.5.0
-    profiles: [observability]
     command:
       - -config.file=/etc/loki/local-config.yaml
     ports:
       - "3100:3100"
     volumes:
       - loki-data:/loki
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:12.1.0
-    profiles: [observability]
     depends_on:
       - prometheus
       - loki
@@ -52,6 +77,7 @@ services:
       - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
+    restart: unless-stopped
 
 volumes:
   postgres-data:
