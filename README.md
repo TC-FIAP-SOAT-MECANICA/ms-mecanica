@@ -58,7 +58,7 @@ Na primeira subida é criado um **ADMIN inicial**: `admin@oficina.com` / `admin1
 Sem token → `401 NAO_AUTENTICADO`; perfil sem permissão → `403 ACESSO_NEGADO`. Recurso de outro cliente responde `404`,
 como se não existisse.
 
-As regras por rota ficam em [`SecurityConfig`](src/main/java/br/com/oficina/identidade/adapter/security/SecurityConfig.java).
+As regras por rota ficam em [`SecurityConfig`](src/main/java/br/com/oficina/infrastructure/dataproviders/config/security/SecurityConfig.java).
 A regra "o cliente só vê o que é dele" fica nos casos de uso, que recebem o `Solicitante` (quem fez a requisição).
 
 ## Dados sensíveis
@@ -94,8 +94,28 @@ por [`V5__modelo_oficina.sql`](src/main/resources/db/migration/V5__modelo_oficin
 | `estoque` | `pecas_insumos` | Peças/insumos, preços e saldo |
 | `atendimento` (Oficina, core) | `ordens_servico` e itens | OS `ABERTA → EM_ANDAMENTO → CONCLUIDA → ENTREGUE` |
 
-Cada módulo tem `domain/`, `application/` (casos de uso, ports, DTOs), `adapter/` (web, persistence, gateways) e
-`config/`. A Oficina consulta Cadastro, Catálogo e Estoque pelos casos de uso deles, por meio de gateways.
+## Estrutura de pastas
+
+As camadas ficam na raiz de `br.com.oficina`, e cada uma tem uma subpasta por módulo (`identidade`, `cadastro`,
+`catalogo`, `estoque`, `atendimento`):
+
+| Pasta | Conteúdo |
+|---|---|
+| `domain/model/<modulo>` | Agregados, entidades e enums, com as regras de negócio |
+| `domain/valueobject`, `domain/exceptions` | Value objects (`Dinheiro`, `Documento`, `Quantidade`) e exceções de domínio |
+| `application/usecase/<modulo>` | Interfaces dos casos de uso |
+| `application/usecase/implementation/<modulo>` | Implementações (`*UseCaseImpl`) |
+| `application/gateways/<modulo>` | Portas: repositórios e integrações com outros módulos |
+| `application/dto/<modulo>`, `application/exceptions` | Entradas e saídas dos casos de uso; erros de acesso |
+| `entrypoints/controllers/<modulo>` | Controllers REST (implementam as interfaces geradas do contrato) |
+| `entrypoints/controllers/presenter/<modulo>` | Conversão entre DTOs do contrato e da aplicação |
+| `infrastructure/dataproviders/database` | Entidades JPA, repositórios Spring Data, implementações dos repositórios e criptografia |
+| `infrastructure/dataproviders/client/<modulo>` | Implementações dos gateways entre módulos |
+| `infrastructure/dataproviders/config` | Segurança, um `*Config` por caso de uso, filtro de log e carga inicial |
+
+O domínio não depende de nenhuma outra camada nem de framework, e a aplicação não depende de `entrypoints` nem de
+`infrastructure`. Um módulo só fala com outro pelos casos de uso dele, por meio de um gateway: a Oficina consulta
+Cadastro, Catálogo e Estoque, e o Cadastro obtém nome, e-mail e telefone do cliente pela Identidade.
 
 ## Observabilidade (Prometheus + Loki + Grafana)
 

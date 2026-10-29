@@ -81,3 +81,31 @@ Action:
 
 Identify and stop the process that's listening on port 8080 or configure this application to listen on another port.
 
+2026-10-28T23:12:04.827-03:00  INFO [] 1788 --- [oficina-mecanica] [main] b.c.o.e.c.c.ServicoControllerTest        : Starting ServicoControllerTest using Java 21.0.10 with PID 1788 (started by gusta in C:\Users\gusta\soa-tchallenger-01)
+2026-10-28T23:12:04.830-03:00  INFO [] 1788 --- [oficina-mecanica] [main] b.c.o.e.c.c.ServicoControllerTest        : No active profile set, falling back to 1 default profile: "local"
+2026-10-28T23:12:09.424-03:00  INFO [] 1788 --- [oficina-mecanica] [main] o.s.b.t.m.w.SpringBootMockServletContext : Initializing Spring TestDispatcherServlet ''
+2026-10-28T23:12:09.425-03:00  INFO [] 1788 --- [oficina-mecanica] [main] o.s.t.web.servlet.TestDispatcherServlet  : Initializing Servlet ''
+2026-10-28T23:12:09.430-03:00  INFO [] 1788 --- [oficina-mecanica] [main] o.s.t.web.servlet.TestDispatcherServlet  : Completed initialization in 4 ms
+2026-10-28T23:12:09.554-03:00  INFO [] 1788 --- [oficina-mecanica] [main] b.c.o.e.c.c.ServicoControllerTest        : Started ServicoControllerTest in 5.724 seconds (process running for 7.871)
+2026-10-28T23:12:10.022-03:00  INFO [4cb310f7-8b39-4a9c-ad09-b1e5d7137436] 1788 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : GET /servicos/99 -> 404 (354 ms)
+2026-10-28T23:12:10.240-03:00  INFO [75dfa910-f94d-4b8c-9f7f-25c7a3cca8b5] 1788 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : POST /servicos -> 400 (135 ms)
+2026-10-28T23:12:10.277-03:00  INFO [75ad01c1-6866-4524-af91-d5dd22af2e48] 1788 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : GET /servicos/7 -> 200 (10 ms)
+2026-10-28T23:12:10.299-03:00  INFO [f0f77925-1540-4d3c-a50f-ad73330c7051] 1788 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : GET /servicos/7 -> 401 (3 ms)
+2026-10-28T23:12:10.333-03:00  INFO [bf0c5e28-c6cd-4af8-aca4-dfceedfaad16] 1788 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : POST /servicos -> 201 (7 ms)
+2026-10-28T23:12:10.364-03:00  WARN [9d140123-647a-4f76-bf8d-4542b42f222b] 1788 --- [oficina-mecanica] [main] b.c.o.e.c.handler.ApiExceptionHandler    : Violação de integridade: fk_oss_servico
+2026-10-28T23:12:10.368-03:00  INFO [9d140123-647a-4f76-bf8d-4542b42f222b] 1788 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : DELETE /servicos/7 -> 409 (8 ms)
+2026-10-28T23:12:10.388-03:00  INFO [0484dca5-0d15-495d-b62c-deb83f384e60] 1788 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : POST /servicos -> 403 (0 ms)
+2026-10-28T23:21:13.033-03:00  INFO [] 17052 --- [oficina-mecanica] [main] b.c.o.e.c.c.ServicoControllerTest        : Starting ServicoControllerTest using Java 21.0.10 with PID 17052 (started by gusta in C:\Users\gusta\soa-tchallenger-01)
+2026-10-28T23:21:13.036-03:00  INFO [] 17052 --- [oficina-mecanica] [main] b.c.o.e.c.c.ServicoControllerTest        : No active profile set, falling back to 1 default profile: "local"
+2026-10-28T23:21:18.183-03:00  INFO [] 17052 --- [oficina-mecanica] [main] o.s.b.t.m.w.SpringBootMockServletContext : Initializing Spring TestDispatcherServlet ''
+2026-10-28T23:21:18.188-03:00  INFO [] 17052 --- [oficina-mecanica] [main] o.s.t.web.servlet.TestDispatcherServlet  : Initializing Servlet ''
+2026-10-28T23:21:18.231-03:00  INFO [] 17052 --- [oficina-mecanica] [main] o.s.t.web.servlet.TestDispatcherServlet  : Completed initialization in 40 ms
+2026-10-28T23:21:18.433-03:00  INFO [] 17052 --- [oficina-mecanica] [main] b.c.o.e.c.c.ServicoControllerTest        : Started ServicoControllerTest in 6.408 seconds (process running for 8.474)
+2026-10-28T23:21:19.125-03:00  INFO [dbf8dec5-d5a8-4ae7-a908-ae940e994cf9] 17052 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : GET /servicos/99 -> 404 (518 ms)
+2026-10-28T23:21:19.373-03:00  INFO [a416642e-2809-4e7b-b82d-d54150333723] 17052 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : POST /servicos -> 400 (143 ms)
+2026-10-28T23:21:19.418-03:00  INFO [fa624003-29a0-4030-978f-adf8b433aa5d] 17052 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : GET /servicos/7 -> 200 (12 ms)
+2026-10-28T23:21:19.448-03:00  INFO [e202d388-55be-4743-a434-eb1698af2dda] 17052 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : GET /servicos/7 -> 401 (4 ms)
+2026-10-28T23:21:19.489-03:00  INFO [2770ccec-daf9-4005-a35d-e4126b606dff] 17052 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : POST /servicos -> 201 (12 ms)
+2026-10-28T23:21:19.524-03:00  WARN [48194b81-a084-4ab6-90a7-17d7cf17c192] 17052 --- [oficina-mecanica] [main] b.c.o.e.c.handler.ApiExceptionHandler    : Violação de integridade: fk_oss_servico
+2026-10-28T23:21:19.525-03:00  INFO [48194b81-a084-4ab6-90a7-17d7cf17c192] 17052 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : DELETE /servicos/7 -> 409 (5 ms)
+2026-10-28T23:21:19.552-03:00  INFO [1a611c01-7dc1-4beb-b962-5ce781770698] 17052 --- [oficina-mecanica] [main] b.c.o.i.d.config.web.RequestIdFilter     : POST /servicos -> 403 (1 ms)
