@@ -6,6 +6,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.HeadersConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.jose.jws.MacAlgorithm;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
@@ -16,14 +18,11 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
-import java.util.Base64;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import java.util.Base64;
 
-import static org.springframework.http.HttpMethod.DELETE;
-import static org.springframework.http.HttpMethod.GET;
-import static org.springframework.http.HttpMethod.POST;
-import static org.springframework.http.HttpMethod.PUT;
+import static org.springframework.http.HttpMethod.*;
 
 @Configuration
 @Import(ProblemDetailSecurityHandler.class)
@@ -34,11 +33,10 @@ public class SecurityConfig {
     private static final String CLIENTE = "CLIENTE";
 
     @Bean
-    SecurityFilterChain securityFilterChain(HttpSecurity http, ProblemDetailSecurityHandler problemHandler)
-            throws Exception {
+    SecurityFilterChain securityFilterChain(HttpSecurity http, ProblemDetailSecurityHandler problemHandler) {
         http
-                .csrf(csrf -> csrf.disable())
-                .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()))
+                .csrf(AbstractHttpConfigurer::disable)
+                .headers(headers -> headers.frameOptions(HeadersConfigurer.FrameOptionsConfig::sameOrigin))
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .exceptionHandling(handling -> handling
                         .authenticationEntryPoint(problemHandler)
@@ -48,8 +46,14 @@ public class SecurityConfig {
                         .authenticationEntryPoint(problemHandler)
                         .accessDeniedHandler(problemHandler))
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus",
-                                "/oficina-mecanica-contract.yaml", "/h2-console/**", "/error").permitAll()
+                        .requestMatchers(
+                                "/actuator/health/**",
+                                "/actuator/info",
+                                "/actuator/prometheus",
+                                "/oficina-mecanica-contract.yaml",
+                                "/h2-console/**",
+                                "/error"
+                        ).permitAll()
                         .requestMatchers(POST, "/auth/login", "/clientes").permitAll()
 
                         .requestMatchers(GET, "/usuarios/me").hasAnyRole(ADMIN, MECANICO, CLIENTE)
@@ -76,6 +80,7 @@ public class SecurityConfig {
 
                         .requestMatchers("/metricas/**", "/actuator/**").hasRole(ADMIN)
                         .anyRequest().authenticated());
+
         return http.build();
     }
 
@@ -105,4 +110,5 @@ public class SecurityConfig {
         }
         return new SecretKeySpec(bytes, "HmacSHA256");
     }
+
 }

@@ -45,4 +45,5 @@ class ProblemDetailSecurityHandler implements AuthenticationEntryPoint, AccessDe
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);
         jsonMapper.writeValue(response.getOutputStream(), problem);
     }
+
 }

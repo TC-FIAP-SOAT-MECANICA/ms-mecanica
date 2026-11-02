@@ -22,18 +22,6 @@ spring:
     problemdetails:
       enabled: true
 
-logging:
-  file:
-    name: logs/oficina-mecanica.log
-  logback:
-    rollingpolicy:
-      max-file-size: 10MB
-      max-history: 7
-  pattern:
-    level: "%5p [%X{requestId:-}]"
-  loki:
-    url: ${LOKI_URL:http://localhost:3100/loki/api/v1/push}
-
 management:
   endpoints:
     web:
@@ -49,8 +37,6 @@ management:
     distribution:
       percentiles-histogram:
         http.server.requests: true
-      slo:
-        http.server.requests: 100ms,300ms,500ms,1s
 
 springdoc:
   api-docs:
