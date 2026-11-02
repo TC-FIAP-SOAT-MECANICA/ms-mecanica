@@ -47,4 +47,5 @@ class JwtTokenIssuer implements TokenIssuer {
         String token = encoder.encode(JwtEncoderParameters.from(header, claims.build())).getTokenValue();
         return new TokenEmitido(token, validade.toSeconds());
     }
+
 }
