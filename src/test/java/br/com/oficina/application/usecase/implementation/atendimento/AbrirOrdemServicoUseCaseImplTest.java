@@ -56,6 +56,12 @@ class AbrirOrdemServicoUseCaseImplTest {
     };
     private final EstoqueGateway estoque = new EstoqueGateway() {
         @Override
+        public Dinheiro cotar(Integer pecaInsumoId, Quantidade quantidade) {
+            movimentos.add("cota " + pecaInsumoId + " " + quantidade);
+            return Dinheiro.de("35.50");
+        }
+
+        @Override
         public Dinheiro baixar(Integer pecaInsumoId, Quantidade quantidade) {
             movimentos.add("baixa " + pecaInsumoId + " " + quantidade);
             return Dinheiro.de("35.50");
@@ -71,14 +77,14 @@ class AbrirOrdemServicoUseCaseImplTest {
             catalogo, estoque, new DirectUnitOfWork(), Clock.fixed(AGORA, ZoneOffset.UTC));
 
     @Test
-    void abreOrdemComPrecosDoCatalogoEDoEstoque() {
+    void abreOrdemComPrecosDoCatalogoEDoEstoqueSemBaixarPecas() {
         OrdemServicoOutput os = useCase.execute(new AbrirOrdemServicoInput(1, 10, "Barulho",
                 List.of(new ItemServicoInput(100, null)), List.of(new ItemPecaInput(200, new BigDecimal("2")))));
 
         assertThat(os.status()).isEqualTo(StatusOrdemServico.ABERTA.name());
         assertThat(os.valorTotal()).isEqualTo("191.00");
         assertThat(os.dataAbertura()).isEqualTo(AGORA);
-        assertThat(movimentos).containsExactly("baixa 200 2.00");
+        assertThat(movimentos).containsExactly("cota 200 2.00");
     }
 
     @Test

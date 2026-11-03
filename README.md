@@ -4,7 +4,27 @@ API da oficina mecânica (Spring Boot 4 / Java 21), em monólito modular com DDD
 
 ## Como executar
 
-### Com Docker (um comando)
+### Instalação automática (clone + Docker)
+
+[**⬇ Baixar setup.sh**](https://raw.githubusercontent.com/TC-FIAP-SOAT-MECANICA/ms-mecanica/main/setup.sh)
+([ver o arquivo](setup.sh))
+
+O script verifica os pré-requisitos, clona o repositório, compila e sobe tudo no Docker, espera a API ficar saudável
+e mostra os endereços. Pré-requisitos: `git` e Docker Desktop em execução. No Windows, rode pelo Git Bash ou WSL.
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/TC-FIAP-SOAT-MECANICA/ms-mecanica/main/setup.sh -o setup.sh
+bash setup.sh
+```
+
+| Opção | Para quê |
+|---|---|
+| `-b <branch>` | Usar outra branch (padrão `main`), ex.: `bash setup.sh -b feat/nova-estrutura` |
+| `-d <pasta>` | Pasta do clone (padrão `ms-mecanica`) |
+
+Rodar de novo na mesma pasta atualiza o clone (`git pull`) e reconstrói os containers.
+
+### Com Docker (projeto já clonado)
 
 Pré-requisito: Docker Desktop em execução. Na raiz do projeto:
 
@@ -12,14 +32,12 @@ Pré-requisito: Docker Desktop em execução. Na raiz do projeto:
 docker compose up -d --build
 ```
 
-Compila o projeto dentro do Docker e sobe aplicação, PostgreSQL, Prometheus, Loki e Grafana. Acompanhe até a `app`
-ficar `healthy` com `docker compose ps`.
+Compila o projeto dentro do Docker e sobe a aplicação e o PostgreSQL. Acompanhe até a `app` ficar `healthy` com
+`docker compose ps`.
 
 | Serviço | Endereço | Acesso |
 |---|---|---|
 | API | http://localhost:8080/api/v1 | login em `POST /auth/login` (ADMIN inicial `admin@oficina.com` / `admin12345`) |
-| Grafana | http://localhost:3000 | `admin` / `admin` |
-| Prometheus | http://localhost:9090 | — |
 | PostgreSQL | `localhost:5436`, banco `oficina` | `oficina` / `oficina` |
 
 | Quero... | Comando |
@@ -117,81 +135,13 @@ O domínio não depende de nenhuma outra camada nem de framework, e a aplicaçã
 `infrastructure`. Um módulo só fala com outro pelos casos de uso dele, por meio de um gateway: a Oficina consulta
 Cadastro, Catálogo e Estoque, e o Cadastro obtém nome, e-mail e telefone do cliente pela Identidade.
 
-## Observabilidade (Prometheus + Loki + Grafana)
-
-| Ferramenta | O que guarda | Porta |
-|---|---|---|
-| **Prometheus** | Métricas (requisições, latência, memória, banco...) coletadas a cada 15 s | 9090 |
-| **Loki** | Logs da aplicação, enviados por ela mesma em ~2 s | 3100 |
-| **Grafana** | Nada — mostra métricas e logs em dashboards | 3000 |
-
-As fontes de dados e o dashboard **Oficina Mecânica - Visão Geral** são criados automaticamente no Grafana.
+## Monitoramento
 
 | Endpoint da aplicação | Para quê |
 |---|---|
 | `/api/v1/actuator/health` | Saúde da aplicação (`/liveness` e `/readiness` para orquestradores) |
-| `/api/v1/actuator/prometheus` | Métricas lidas pelo Prometheus |
-| `/api/v1/actuator/metrics` | Navegar pelas métricas disponíveis |
+| `/api/v1/actuator/prometheus` | Métricas no formato do Prometheus |
+| `/api/v1/actuator/metrics` | Navegar pelas métricas disponíveis (ADMIN) |
 
-### Logs
-
-Cada chamada gera uma linha de log com método, rota, status, tempo e o `X-Request-Id`:
-
-```
-2026-10-13T21:59:36 INFO [aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee] ... RequestIdFilter : GET /api/v1/clientes/... -> 404 (12 ms)
-```
-
-O log é gravado em três lugares:
-
-- **Console** — onde a aplicação foi iniciada.
-- **Arquivo** — `logs/oficina-mecanica.log` (até 10 MB por arquivo, 7 dias de histórico).
-- **Loki** — pesquisável no Grafana: painéis *Logs da aplicação* e *Somente erros* do dashboard, ou em *Explore → Loki*.
-
-Para achar uma chamada específica, copie o `X-Request-Id` da resposta (o Postman mostra em *Headers*) e cole no
-campo **Buscar no log** do dashboard. Se o Loki estiver desligado, a aplicação funciona normalmente; os logs
-continuam no console e no arquivo.
-
-Consultas úteis no *Explore → Loki*:
-
-```logql
-{application="oficina-mecanica"}                         # todos os logs
-{application="oficina-mecanica", level="ERROR"}          # só erros
-{application="oficina-mecanica"} |= "POST /api/v1/clientes"   # chamadas de um endpoint
-{application="oficina-mecanica"} |= "-> 4"               # respostas 4xx
-```
-
-### Com Docker
-
-Já sobe com `docker compose up -d --build` (veja *Como executar*): o Prometheus lê a aplicação pelo container `app`.
-
-### Sem Docker (Windows)
-
-1. Baixe e extraia:
-   - Prometheus (Windows amd64): https://prometheus.io/download/
-   - Loki (`loki-windows-amd64.exe.zip`): https://github.com/grafana/loki/releases
-   - Grafana (Windows, versão *standalone* `.zip`): https://grafana.com/grafana/download?platform=windows
-2. Suba a aplicação (porta 8080).
-3. Prometheus — na pasta extraída:
-   ```powershell
-   .\prometheus.exe --config.file="C:\caminho\do\projeto\observability\prometheus\prometheus.yml"
-   ```
-   Confira em http://localhost:9090/targets se o alvo `oficina-mecanica` está **UP**.
-4. Loki — na pasta extraída:
-   ```powershell
-   .\loki-windows-amd64.exe --config.file="C:\caminho\do\projeto\observability\loki\loki-config.yaml"
-   ```
-5. Grafana — na pasta extraída:
-   ```powershell
-   $env:PROMETHEUS_URL = "http://localhost:9090"
-   $env:LOKI_DATASOURCE_URL = "http://localhost:3100"
-   $env:GRAFANA_DASHBOARDS_PATH = "C:\caminho\do\projeto\observability\grafana\dashboards"
-   $env:GF_PATHS_PROVISIONING = "C:\caminho\do\projeto\observability\grafana\provisioning"
-   .\bin\grafana.exe server
-   ```
-6. Acesse http://localhost:3000 (usuário `admin`, senha `admin`) → *Dashboards* → *Oficina Mecânica*.
-
-### Se a aplicação usar outra porta
-
-Altere o `targets` em `observability/prometheus/prometheus.yml` (ou `prometheus-docker.yml`), por exemplo
-`localhost:8081`. Se o Loki estiver em outro endereço, defina a variável `LOKI_URL` ao subir a aplicação
-(padrão `http://localhost:3100/loki/api/v1/push`).
+Toda resposta traz o header `X-Request-Id`; nas respostas de erro ele também vem no campo `traceId`. Cada chamada
+gera uma linha no log com método, rota, status e tempo (`docker compose logs -f app`).

@@ -5,14 +5,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      loki:
-        condition: service_started
     environment:
       SPRING_PROFILES_ACTIVE: postgres
       DB_URL: jdbc:postgresql://postgres:5432/oficina
       DB_USERNAME: oficina
       DB_PASSWORD: oficina
-      LOKI_URL: http://loki:3100/loki/api/v1/push
       ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@oficina.com}
       ADMIN_SENHA: ${ADMIN_SENHA:-admin12345}
     ports:
@@ -36,51 +33,5 @@ services:
       retries: 10
     restart: unless-stopped
 
-  prometheus:
-    image: prom/prometheus:v3.5.0
-    command:
-      - --config.file=/etc/prometheus/prometheus.yml
-      - --storage.tsdb.retention.time=15d
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./observability/prometheus/prometheus-docker.yml:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
-
-  loki:
-    image: grafana/loki:3.5.0
-    command:
-      - -config.file=/etc/loki/local-config.yaml
-    ports:
-      - "3100:3100"
-    volumes:
-      - loki-data:/loki
-    restart: unless-stopped
-
-  grafana:
-    image: grafana/grafana:12.1.0
-    depends_on:
-      - prometheus
-      - loki
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      PROMETHEUS_URL: http://prometheus:9090
-      LOKI_DATASOURCE_URL: http://loki:3100
-      GRAFANA_DASHBOARDS_PATH: /var/lib/grafana/dashboards
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
-      - grafana-data:/var/lib/grafana
-    restart: unless-stopped
-
 volumes:
   postgres-data:
-  prometheus-data:
-  loki-data:
-  grafana-data:

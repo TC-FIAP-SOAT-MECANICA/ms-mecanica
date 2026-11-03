@@ -8,16 +8,13 @@ import br.com.oficina.domain.valueobject.Quantidade;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Objects;
-import java.util.regex.Pattern;
 
 public class PecaInsumo {
-
-    private static final Pattern UNIDADE = Pattern.compile("^[A-Z]{1,10}$");
 
     private final Integer id;
     private String sku;
     private String nome;
-    private String unidadeMedida;
+    private UnidadeMedida unidadeMedida;
     private Dinheiro precoCusto;
     private Dinheiro precoVenda;
     private BigDecimal quantidadeEstoque;
@@ -47,23 +44,28 @@ public class PecaInsumo {
         if (dados.nome() == null || dados.nome().isBlank()) {
             throw new ValidationException("Nome da peça é obrigatório");
         }
-        String unidade = dados.unidadeMedida() == null ? "" : dados.unidadeMedida().trim().toUpperCase();
-        if (!UNIDADE.matcher(unidade).matches()) {
-            throw new ValidationException("Unidade de medida inválida (ex.: UN, LT, KG)");
-        }
+        UnidadeMedida unidade = new UnidadeMedida(dados.unidadeMedida());
         if (dados.estoqueMinimo() == null || dados.estoqueMinimo().signum() < 0) {
             throw new ValidationException("Estoque mínimo deve ser zero ou positivo");
         }
-        aplicar(new DadosPecaInsumo(dados.sku().trim(), dados.nome().trim(), unidade,
+        unidade.validar(dados.estoqueMinimo());
+        unidade.validar(quantidadeEstoque);
+        aplicar(new DadosPecaInsumo(dados.sku().trim(), dados.nome().trim(), unidade.codigo(),
                 Objects.requireNonNull(dados.precoCusto(), "precoCusto"),
                 Objects.requireNonNull(dados.precoVenda(), "precoVenda"), dados.estoqueMinimo()));
     }
 
+    public void validarQuantidade(Quantidade quantidade) {
+        unidadeMedida.validar(quantidade.valor());
+    }
+
     public void darEntrada(Quantidade quantidade) {
+        validarQuantidade(quantidade);
         quantidadeEstoque = quantidadeEstoque.add(quantidade.valor());
     }
 
     public void darSaida(Quantidade quantidade) {
+        validarQuantidade(quantidade);
         if (quantidadeEstoque.compareTo(quantidade.valor()) < 0) {
             throw new BusinessRuleException("ESTOQUE_INSUFICIENTE", "Estoque insuficiente para " + nome
                     + ": disponível " + quantidadeEstoque.toPlainString() + ", solicitado " + quantidade);
@@ -75,6 +77,7 @@ public class PecaInsumo {
         if (saldoContado == null || saldoContado.signum() < 0) {
             throw new ValidationException("Saldo contado deve ser zero ou positivo");
         }
+        unidadeMedida.validar(saldoContado);
         quantidadeEstoque = escala(saldoContado);
     }
 
@@ -85,7 +88,7 @@ public class PecaInsumo {
     private void aplicar(DadosPecaInsumo dados) {
         this.sku = dados.sku();
         this.nome = dados.nome();
-        this.unidadeMedida = dados.unidadeMedida();
+        this.unidadeMedida = new UnidadeMedida(dados.unidadeMedida());
         this.precoCusto = dados.precoCusto();
         this.precoVenda = dados.precoVenda();
         this.estoqueMinimo = escala(dados.estoqueMinimo());
@@ -108,7 +111,7 @@ public class PecaInsumo {
     }
 
     public String unidadeMedida() {
-        return unidadeMedida;
+        return unidadeMedida.codigo();
     }
 
     public Dinheiro precoCusto() {

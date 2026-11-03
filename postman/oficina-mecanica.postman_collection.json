@@ -2066,7 +2066,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('quantidadeEstoque = 17.5', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(17.5));"
+                  "pm.test('quantidadeEstoque = 18', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(18));"
                 ]
               }
             }
@@ -2098,7 +2098,205 @@
             "description": "**Perfil:** MECANICO",
             "body": {
               "mode": "raw",
+              "raw": "{\n  \"tipo\": \"SAIDA\",\n  \"quantidade\": 2\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[erro] Saída fracionada de peça em UN",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('codigo QUANTIDADE_FRACIONADA', () => pm.expect(pm.response.json().codigo).to.eql('QUANTIDADE_FRACIONADA'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaId}}/movimentacoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaId}}",
+                "movimentacoes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO\n\nUnidades contáveis (UN, PC, CX, KIT...) só aceitam quantidade inteira: não existe meio filtro.",
+            "body": {
+              "mode": "raw",
               "raw": "{\n  \"tipo\": \"SAIDA\",\n  \"quantidade\": 2.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Mecânico cadastra óleo em litros",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201', () => pm.response.to.have.status(201));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('pecaOleoId', pm.response.json().id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sku\": \"OLEO-{{sufixo}}\",\n  \"nome\": \"Óleo 5W30\",\n  \"unidadeMedida\": \"LT\",\n  \"precoCusto\": \"30.00\",\n  \"precoVenda\": \"48.00\",\n  \"estoqueMinimo\": 2.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Entrada fracionada de óleo (LT)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('quantidadeEstoque = 10.5', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(10.5));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaOleoId}}/movimentacoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaOleoId}}",
+                "movimentacoes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"ENTRADA\",\n  \"quantidade\": 10.5\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Saída fracionada de óleo (LT)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('quantidadeEstoque = 6.75', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(6.75));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaOleoId}}/movimentacoes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaOleoId}}",
+                "movimentacoes"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO\n\nLT, KG e outras unidades de medida contínuas aceitam até duas casas decimais.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"tipo\": \"SAIDA\",\n  \"quantidade\": 3.75\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2471,7 +2669,7 @@
                 }
               ]
             },
-            "description": "**Perfil:** MECANICO\n\nServiço pelo preço base (120.00) + 2 × peça (35.50) = 191.00. Baixa 2 unidades do estoque.",
+            "description": "**Perfil:** MECANICO\n\nServiço pelo preço base (120.00) + 2 × peça (35.50) = 191.00. As peças só entram no orçamento: o estoque não muda enquanto a OS está ABERTA.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"veiculoId\": {{veiculoId}},\n  \"descricaoProblema\": \"Barulho no motor\",\n  \"servicos\": [\n    {\n      \"servicoId\": {{servicoId}}\n    }\n  ],\n  \"pecas\": [\n    {\n      \"pecaInsumoId\": {{pecaId}},\n      \"quantidade\": 2\n    }\n  ]\n}",
@@ -2484,7 +2682,7 @@
           }
         },
         {
-          "name": "Saldo da peça após a abertura",
+          "name": "Saldo da peça após a abertura (inalterado)",
           "event": [
             {
               "listen": "test",
@@ -2492,7 +2690,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('quantidadeEstoque = 8', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(8));"
+                  "pm.test('quantidadeEstoque = 10', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(10));"
                 ]
               }
             }
@@ -2787,7 +2985,56 @@
           }
         },
         {
-          "name": "[erro] Estoque insuficiente (nada é gravado)",
+          "name": "Orçar 1000 peças na OS do segundo cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}/pecas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{os2Id}}",
+                "pecas"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO\n\nCom a OS ABERTA a peça só é orçada, então o pedido passa mesmo sem saldo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pecaInsumoId\": {{pecaId}},\n  \"quantidade\": 1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[erro] Diagnóstico sem saldo para as peças",
           "event": [
             {
               "listen": "test",
@@ -2804,12 +3051,105 @@
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/ordens-servico",
+              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}/diagnostico",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
-                "ordens-servico"
+                "ordens-servico",
+                "{{os2Id}}",
+                "diagnostico"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO\n\nA baixa acontece ao passar para EM_ANDAMENTO; sem saldo, nada muda.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"diagnosticoTecnico\": \"Revisão completa\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "OS sem saldo continua ABERTA",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = ABERTA', () => pm.expect(pm.response.json().status).to.eql(\"ABERTA\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{os2Id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "Incluir peça na OS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "if (pm.response.code < 300) pm.collectionVariables.set('itemPecaId', pm.response.json().pecas.slice(-1)[0].id);",
+                  "pm.test('valorTotal = 226.50', () => pm.expect(pm.response.json().valorTotal).to.eql(\"226.50\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/pecas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "pecas"
               ]
             },
             "auth": {
@@ -2825,7 +3165,7 @@
             "description": "**Perfil:** MECANICO",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"veiculoId\": {{veiculoId}},\n  \"pecas\": [\n    {\n      \"pecaInsumoId\": {{pecaId}},\n      \"quantidade\": 1000\n    }\n  ]\n}",
+              "raw": "{\n  \"pecaInsumoId\": {{pecaId}},\n  \"quantidade\": 1\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2835,16 +3175,15 @@
           }
         },
         {
-          "name": "Incluir peça na OS",
+          "name": "[erro] Peça em UN com quantidade fracionada",
           "event": [
             {
               "listen": "test",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "if (pm.response.code < 300) pm.collectionVariables.set('itemPecaId', pm.response.json().pecas.slice(-1)[0].id);",
-                  "pm.test('valorTotal = 244.25', () => pm.expect(pm.response.json().valorTotal).to.eql(\"244.25\"));"
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('codigo QUANTIDADE_FRACIONADA', () => pm.expect(pm.response.json().codigo).to.eql('QUANTIDADE_FRACIONADA'));"
                 ]
               }
             }
@@ -3149,7 +3488,7 @@
                 }
               ]
             },
-            "description": "**Perfil:** MECANICO",
+            "description": "**Perfil:** MECANICO\n\nABERTA → EM_ANDAMENTO: agora o estoque das peças da OS é baixado.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"diagnosticoTecnico\": \"Filtro saturado e óleo vencido\"\n}",
@@ -3159,6 +3498,46 @@
                 }
               }
             }
+          }
+        },
+        {
+          "name": "Saldo da peça após o diagnóstico",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('quantidadeEstoque = 8', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(8));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
           }
         },
         {
@@ -3666,6 +4045,10 @@
     },
     {
       "key": "pecaId",
+      "value": ""
+    },
+    {
+      "key": "pecaOleoId",
       "value": ""
     },
     {

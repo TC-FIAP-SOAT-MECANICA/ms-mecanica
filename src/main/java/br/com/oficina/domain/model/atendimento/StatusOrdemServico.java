@@ -9,4 +9,8 @@ public enum StatusOrdemServico {
     public boolean permiteEditarItens() {
         return this == ABERTA || this == EM_ANDAMENTO;
     }
+
+    public boolean pecasBaixadasDoEstoque() {
+        return this != ABERTA;
+    }
 }

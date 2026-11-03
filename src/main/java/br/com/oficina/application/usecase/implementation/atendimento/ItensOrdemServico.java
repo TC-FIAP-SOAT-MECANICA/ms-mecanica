@@ -28,7 +28,9 @@ class ItensOrdemServico {
     void incluirPeca(OrdemServico ordemServico, ItemPecaInput input) {
         ordemServico.garantirItensEditaveis();
         Quantidade quantidade = Quantidade.de(input.quantidade());
-        Dinheiro precoVenda = estoque.baixar(input.pecaInsumoId(), quantidade);
+        Dinheiro precoVenda = ordemServico.status().pecasBaixadasDoEstoque()
+                ? estoque.baixar(input.pecaInsumoId(), quantidade)
+                : estoque.cotar(input.pecaInsumoId(), quantidade);
         ordemServico.incluirPeca(input.pecaInsumoId(), quantidade, precoVenda);
     }
 }

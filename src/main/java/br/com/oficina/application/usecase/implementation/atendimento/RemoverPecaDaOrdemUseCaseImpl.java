@@ -28,7 +28,9 @@ public class RemoverPecaDaOrdemUseCaseImpl implements RemoverPecaDaOrdemUseCase 
             OrdemServico ordemServico = repository.findById(ordemServicoId)
                     .orElseThrow(() -> new ResourceNotFoundException("Ordem de serviço", ordemServicoId));
             ItemPeca removido = ordemServico.removerPeca(itemId);
-            estoque.devolver(removido.pecaInsumoId(), removido.quantidade());
+            if (ordemServico.status().pecasBaixadasDoEstoque()) {
+                estoque.devolver(removido.pecaInsumoId(), removido.quantidade());
+            }
             return OrdemServicoOutput.from(repository.save(ordemServico));
         });
     }

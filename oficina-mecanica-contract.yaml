@@ -91,8 +91,10 @@ info:
     | `POST /ordens-servico/{id}/finalizacao` | MECANICO | `EM_ANDAMENTO` → `CONCLUIDA` (registra `dataConclusao`) |
     | `POST /ordens-servico/{id}/entrega` | ADMIN, MECANICO | `CONCLUIDA` → `ENTREGUE` |
 
-    Serviços e peças só podem ser incluídos/removidos em `ABERTA` ou `EM_ANDAMENTO`. Incluir uma peça dá baixa
-    no estoque; removê-la devolve a quantidade. `valorTotal` é sempre a soma dos itens.
+    Serviços e peças só podem ser incluídos/removidos em `ABERTA` ou `EM_ANDAMENTO`. Em `ABERTA` as peças são só
+    orçadas: o estoque não muda. A baixa acontece quando a OS passa para `EM_ANDAMENTO` (diagnóstico registrado),
+    momento em que o mecânico de fato usa as peças. Em `EM_ANDAMENTO`, incluir peça dá baixa na hora e removê-la
+    devolve a quantidade. `valorTotal` é sempre a soma dos itens.
     Transição inválida → `409` com `codigo = OS_TRANSICAO_INVALIDA`.
   contact:
     name: Grupo SOAT — Fase 1
@@ -499,6 +501,8 @@ paths:
       description: |
         `ENTRADA` soma ao saldo; `SAIDA` subtrai (`422 ESTOQUE_INSUFICIENTE`);
         `AJUSTE_INVENTARIO` define o saldo contado. Retorna a peça com o saldo atualizado.
+        Peças em unidade contável (`UN`, `PC`, `PCT`, `CX`, `KIT`, `PAR`, `JG`) só aceitam quantidade inteira
+        (`422 QUANTIDADE_FRACIONADA`); as demais (`LT`, `KG`, `M`...) aceitam até duas casas decimais.
       operationId: registrarMovimentacaoEstoque
       x-roles: [ADMIN, MECANICO]
       parameters:
@@ -540,8 +544,8 @@ paths:
       summary: Abre ordem de serviço
       description: |
         O veículo deve pertencer ao cliente (`422 VEICULO_NAO_PERTENCE_AO_CLIENTE`). Os serviços entram com o preço
-        base do catálogo (ou `precoFinal`, se informado) e as peças com o preço de venda do estoque, já dando baixa
-        no saldo (`422 ESTOQUE_INSUFICIENTE`). Status inicial `ABERTA`. Tudo em uma única transação.
+        base do catálogo (ou `precoFinal`, se informado) e as peças com o preço de venda do estoque, sem baixar o
+        saldo: a baixa acontece no diagnóstico. Status inicial `ABERTA`.
       operationId: abrirOrdemServico
       x-roles: [ADMIN, MECANICO]
       parameters:
@@ -617,7 +621,10 @@ paths:
     post:
       tags: [Atendimento — Ordens de Serviço]
       summary: Inclui peça ou insumo na OS
-      description: Dá baixa no estoque (`422 ESTOQUE_INSUFICIENTE`) e congela o preço de venda atual.
+      description: |
+        Congela o preço de venda atual. Em `ABERTA` a peça só entra no orçamento; em `EM_ANDAMENTO` dá baixa no
+        estoque na hora (`422 ESTOQUE_INSUFICIENTE`). Peça em unidade contável exige quantidade inteira
+        (`422 QUANTIDADE_FRACIONADA`).
       operationId: incluirPecaNaOrdem
       x-roles: [ADMIN, MECANICO]
       requestBody:
@@ -637,7 +644,7 @@ paths:
     delete:
       tags: [Atendimento — Ordens de Serviço]
       summary: Remove peça ou insumo da OS
-      description: Devolve a quantidade ao estoque.
+      description: Em `EM_ANDAMENTO` devolve a quantidade ao estoque; em `ABERTA` só retira do orçamento.
       operationId: removerPecaDaOrdem
       x-roles: [ADMIN, MECANICO]
       responses:
@@ -652,7 +659,9 @@ paths:
     post:
       tags: [Atendimento — Ordens de Serviço]
       summary: Registra diagnóstico técnico e inicia o atendimento
-      description: '`ABERTA` → `EM_ANDAMENTO`.'
+      description: |
+        `ABERTA` → `EM_ANDAMENTO`. Dá baixa no estoque de todas as peças da OS, na mesma transação: se faltar
+        saldo de alguma, nada muda e a OS continua `ABERTA` (`422 ESTOQUE_INSUFICIENTE`).
       operationId: registrarDiagnostico
       x-roles: [ADMIN, MECANICO]
       requestBody:
@@ -662,6 +671,7 @@ paths:
         '200': { $ref: '#/components/responses/OrdemServico' }
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
         default: { $ref: '#/components/responses/Erro' }
 
   /ordens-servico/{osId}/finalizacao:
@@ -924,6 +934,7 @@ components:
         - REGISTRO_EM_USO
         - VEICULO_NAO_PERTENCE_AO_CLIENTE
         - ESTOQUE_INSUFICIENTE
+        - QUANTIDADE_FRACIONADA
         - OS_TRANSICAO_INVALIDA
         - OS_ITEM_NAO_EDITAVEL
         - ORDEM_SEM_SERVICOS
@@ -1062,7 +1073,7 @@ components:
       properties:
         sku: { type: string, pattern: '^[A-Za-z0-9._-]{1,50}$', description: Código de barras ou referência interna (único), example: FLT-OLEO-001 }
         nome: { type: string, minLength: 2, maxLength: 100, example: Filtro de óleo }
-        unidadeMedida: { type: string, pattern: '^[A-Z]{1,10}$', description: 'UN, LT, KG, etc.', example: UN }
+        unidadeMedida: { type: string, pattern: '^[A-Z]{1,10}$', description: 'UN, LT, KG, etc. Unidades contáveis (UN, PC, PCT, CX, KIT, PAR, JG) exigem estoque mínimo inteiro', example: UN }
         precoCusto: { $ref: '#/components/schemas/Dinheiro' }
         precoVenda: { $ref: '#/components/schemas/Dinheiro' }
         estoqueMinimo: { type: number, minimum: 0, maximum: 99999999.99, multipleOf: 0.01, example: 5 }
