@@ -1,0 +1,159 @@
+package br.com.oficina.application.usecase.implementation.cadastro;
+
+import br.com.oficina.application.dto.cadastro.CadastrarClienteInput;
+import br.com.oficina.application.dto.cadastro.ClienteOutput;
+import br.com.oficina.application.dto.shared.PageQuery;
+import br.com.oficina.application.dto.shared.PageResult;
+import br.com.oficina.application.dto.shared.Solicitante;
+import br.com.oficina.application.exceptions.ForbiddenException;
+import br.com.oficina.application.gateways.cadastro.ClienteRepository;
+import br.com.oficina.application.gateways.cadastro.UsuarioGateway;
+import br.com.oficina.application.gateways.shared.UnitOfWork;
+import br.com.oficina.domain.exceptions.ConflictException;
+import br.com.oficina.domain.exceptions.ValidationException;
+import br.com.oficina.domain.model.cadastro.Cliente;
+import br.com.oficina.domain.valueobject.Documento;
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Supplier;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class CadastrarClienteUseCaseImplTest {
+
+    private static final Instant AGORA = Instant.parse("2026-10-25T12:00:00Z");
+
+    private final InMemoryClienteRepository clientes = new InMemoryClienteRepository();
+    private final FakeUsuarioGateway usuarios = new FakeUsuarioGateway();
+    private final CadastrarClienteUseCaseImpl useCase =
+            new CadastrarClienteUseCaseImpl(clientes, usuarios, new DirectUnitOfWork());
+
+    @Test
+    void criaUsuarioEClienteVinculados() {
+        ClienteOutput cliente = useCase.execute(new CadastrarClienteInput("529.982.247-25", "João", "joao@email.com",
+                "+5511999998888", "senhaForte1"));
+
+        assertThat(cliente.id()).isEqualTo(1);
+        assertThat(cliente.usuarioId()).isEqualTo(100);
+        assertThat(cliente.documento()).isEqualTo("52998224725");
+        assertThat(cliente.tipoDocumento()).isEqualTo("CPF");
+        assertThat(cliente.criadoEm()).isEqualTo(AGORA);
+        assertThat(usuarios.criados).containsExactly("joao@email.com");
+    }
+
+    @Test
+    void recusaDocumentoDuplicadoSemCriarUsuario() {
+        useCase.execute(new CadastrarClienteInput("52998224725", "João", "joao@email.com", "+5511999998888",
+                "senhaForte1"));
+
+        assertThatThrownBy(() -> useCase.execute(new CadastrarClienteInput("52998224725", "Outro",
+                "outro@email.com", "+5511999998888", "senhaForte1")))
+                .isInstanceOf(ConflictException.class)
+                .extracting("code").isEqualTo("DOCUMENTO_JA_CADASTRADO");
+        assertThat(usuarios.criados).hasSize(1);
+    }
+
+    @Test
+    void clienteAutenticadoNaoCadastraOutroCliente() {
+        Solicitante cliente = new Solicitante(5, Solicitante.Papel.CLIENTE, 1);
+
+        assertThatThrownBy(() -> useCase.execute(new CadastrarClienteInput("52998224725", "João", "joao@email.com",
+                "+5511999998888", "senhaForte1"), cliente))
+                .isInstanceOf(ForbiddenException.class);
+        assertThat(usuarios.criados).isEmpty();
+    }
+
+    @Test
+    void recusaDocumentoInvalido() {
+        assertThatThrownBy(() -> useCase.execute(new CadastrarClienteInput("52998224700", "João", "joao@email.com",
+                "+5511999998888", "senhaForte1")))
+                .isInstanceOf(ValidationException.class)
+                .hasMessage("CPF/CNPJ inválido");
+    }
+
+    private static class DirectUnitOfWork implements UnitOfWork {
+
+        @Override
+        public <T> T execute(Supplier<T> work) {
+            return work.get();
+        }
+    }
+
+    private static class FakeUsuarioGateway implements UsuarioGateway {
+
+        private final List<String> criados = new ArrayList<>();
+
+        @Override
+        public ContatoUsuario cadastrarUsuarioCliente(String nome, String email, String telefone, String senha) {
+            criados.add(email);
+            return new ContatoUsuario(99 + criados.size(), nome, email, telefone, AGORA);
+        }
+
+        @Override
+        public ContatoUsuario atualizarContato(Integer usuarioId, String nome, String email, String telefone) {
+            return new ContatoUsuario(usuarioId, nome, email, telefone, AGORA);
+        }
+
+        @Override
+        public ContatoUsuario buscarContato(Integer usuarioId) {
+            return new ContatoUsuario(usuarioId, "João", "joao@email.com", "+5511999998888", AGORA);
+        }
+
+        @Override
+        public PageResult<ContatoUsuario> listarContatosDeClientes(String nome, PageQuery pageQuery) {
+            return new PageResult<>(List.of(), 0, 0, 0, 0);
+        }
+
+        @Override
+        public void removerUsuario(Integer usuarioId) {
+        }
+    }
+
+    private static class InMemoryClienteRepository implements ClienteRepository {
+
+        private final List<Cliente> clientes = new ArrayList<>();
+
+        @Override
+        public Cliente save(Cliente cliente) {
+            Cliente salvo = cliente.comId(clientes.size() + 1);
+            clientes.add(salvo);
+            return salvo;
+        }
+
+        @Override
+        public Optional<Cliente> findById(Integer id) {
+            return clientes.stream().filter(c -> c.id().equals(id)).findFirst();
+        }
+
+        @Override
+        public Optional<Cliente> findByDocumento(Documento documento) {
+            return clientes.stream().filter(c -> c.documento().equals(documento)).findFirst();
+        }
+
+        @Override
+        public Optional<Integer> findIdByUsuarioId(Integer usuarioId) {
+            return clientes.stream().filter(c -> c.usuarioId().equals(usuarioId)).map(Cliente::id).findFirst();
+        }
+
+        @Override
+        public boolean existsByDocumento(Documento documento) {
+            return findByDocumento(documento).isPresent();
+        }
+
+        @Override
+        public boolean existsById(Integer id) {
+            return findById(id).isPresent();
+        }
+
+        @Override
+        public List<Cliente> findByUsuarioIds(Collection<Integer> usuarioIds) {
+            return clientes.stream().filter(c -> usuarioIds.contains(c.usuarioId())).toList();
+        }
+    }
+}
