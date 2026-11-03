@@ -211,7 +211,6 @@
                             <generatorName>spring</generatorName>
                             <apiPackage>br.com.oficina.contract.api</apiPackage>
                             <modelPackage>br.com.oficina.contract.model</modelPackage>
-                            <configPackage>br.com.oficina.contract.config</configPackage>
                             <modelNameSuffix>Dto</modelNameSuffix>
                             <generateApiTests>false</generateApiTests>
                             <generateModelTests>false</generateModelTests>
@@ -220,6 +219,7 @@
                             <configOptions>
                                 <interfaceOnly>true</interfaceOnly>
                                 <useSpringBoot3>true</useSpringBoot3>
+                                <configPackage>br.com.oficina.contract.config</configPackage>
                                 <!-- agrupa por caminho (/servicos → ServicosApi); as tags têm
                                 acentos -->
                                 <useTags>false</useTags>

@@ -550,6 +550,8 @@ paths:
         base do catálogo (ou `precoFinal`, se informado) e as peças com o preço de venda do estoque, sem baixar o
         saldo: a baixa acontece na aprovação do orçamento. Status inicial `RECEBIDA`; `agendamentoDiagnostico`
         é opcional.
+
+        Exemplo de requisição: `{"clienteId":1,"veiculoId":1,"descricaoProblema":"Barulho na suspensão dianteira","servicos":[{"servicoId":1}],"pecas":[{"pecaInsumoId":1,"quantidade":4}]}`
       operationId: abrirOrdemServico
       x-roles: [ADMIN, MECANICO]
       parameters:
@@ -559,14 +561,6 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/AbrirOrdemServicoRequest' }
-            example:
-              clienteId: 1
-              veiculoId: 1
-              descricaoProblema: Barulho na suspensão dianteira
-              servicos:
-                - { servicoId: 1 }
-              pecas:
-                - { pecaInsumoId: 1, quantidade: 4 }
       responses:
         '201': { $ref: '#/components/responses/OrdemServicoCriada' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -706,6 +700,8 @@ paths:
         Só em `AGUARDANDO_APROVACAO`. Aprovado → `EM_EXECUCAO`: dá baixa no estoque de todas as peças da OS na mesma
         transação (se faltar saldo, nada muda: `422 ESTOQUE_INSUFICIENTE`) e registra `agendamentoServico`, se
         informado. Rejeitado → `FINALIZADA` sem execução. O CLIENTE só avalia as próprias OS.
+
+        Exemplo de requisição: `{"aprovado":true,"agendamentoServico":"2026-11-10T09:00:00-03:00"}`
       operationId: avaliarOrcamento
       x-roles: [ADMIN, CLIENTE]
       requestBody:
@@ -713,7 +709,6 @@ paths:
         content:
           application/json:
             schema: { $ref: '#/components/schemas/AvaliacaoOrcamentoRequest' }
-            example: { aprovado: true, agendamentoServico: '2026-11-10T09:00:00-03:00' }
       responses:
         '200': { $ref: '#/components/responses/OrdemServico' }
         '404': { $ref: '#/components/responses/NotFound' }
