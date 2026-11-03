@@ -2,30 +2,30 @@
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/TC-FIAP-SOAT-MECANICA/ms-mecanica.git}"
-BRANCH="${BRANCH:-main}"
+BRANCH="main"
 DIRETORIO="${DIRETORIO:-ms-mecanica}"
 TIMEOUT_SEGUNDOS="${TIMEOUT_SEGUNDOS:-300}"
 
 uso() {
     cat <<EOF
-Uso: ./setup.sh [-b branch] [-d diretorio]
+Uso: ./setup.sh [-d diretorio]
 
-Clona o projeto ms-mecanica e sobe tudo no Docker (API e PostgreSQL).
+Clona a branch main do ms-mecanica e sobe tudo no Docker (API e PostgreSQL).
+Para o ambiente com todos os serviços, use o repositório docker:
+https://github.com/TC-FIAP-SOAT-MECANICA/docker
 
-  -b branch     Branch a usar (padrão: ${BRANCH})
   -d diretorio  Pasta do clone (padrão: ${DIRETORIO})
   -h            Mostra esta ajuda
 
-Também aceita as variáveis REPO_URL, BRANCH, DIRETORIO e TIMEOUT_SEGUNDOS.
+Também aceita as variáveis REPO_URL, DIRETORIO e TIMEOUT_SEGUNDOS.
 EOF
 }
 
 info() { printf '\n==> %s\n' "$1"; }
 erro() { printf '\nERRO: %s\n' "$1" >&2; exit 1; }
 
-while getopts "b:d:h" opcao; do
+while getopts "d:h" opcao; do
     case "$opcao" in
-        b) BRANCH="$OPTARG" ;;
         d) DIRETORIO="$OPTARG" ;;
         h) uso; exit 0 ;;
         *) uso; exit 1 ;;
