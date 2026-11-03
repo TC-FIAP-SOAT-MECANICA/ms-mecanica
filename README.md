@@ -4,6 +4,16 @@ API da oficina mecânica (Spring Boot 4 / Java 21), em monólito modular com DDD
 
 ## Como executar
 
+Há duas formas de subir com Docker:
+
+| Repositório | Quando usar |
+|---|---|
+| [**docker**](https://github.com/TC-FIAP-SOAT-MECANICA/docker) | Ambiente da oficina com todos os serviços (hoje: ms-mecanica + PostgreSQL). **Recomendado.** |
+| **ms-mecanica** (este) | Só esta API, direto do código deste repositório |
+
+Nos dois casos o script baixa e executa a branch `main`. As duas formas usam as portas 8080 e 5436: pare uma
+(`docker compose down` na pasta dela) antes de subir a outra.
+
 ### Instalação automática (clone + Docker)
 
 [**⬇ Baixar setup.sh**](https://raw.githubusercontent.com/TC-FIAP-SOAT-MECANICA/ms-mecanica/main/setup.sh)
@@ -19,7 +29,6 @@ bash setup.sh
 
 | Opção | Para quê |
 |---|---|
-| `-b <branch>` | Usar outra branch (padrão `main`), ex.: `bash setup.sh -b feat/nova-estrutura` |
 | `-d <pasta>` | Pasta do clone (padrão `ms-mecanica`) |
 
 Rodar de novo na mesma pasta atualiza o clone (`git pull`) e reconstrói os containers.
