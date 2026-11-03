@@ -13,7 +13,7 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "pecas_insumos")
+@Table(name = "tb_pecas_insumos")
 public class PecaInsumoEntity {
 
     @Id

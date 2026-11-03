@@ -39,7 +39,7 @@ public class AbrirOrdemServicoUseCaseImpl implements AbrirOrdemServicoUseCase {
         return unitOfWork.execute(() -> {
             validarClienteEVeiculo(input.clienteId(), input.veiculoId());
             OrdemServico ordemServico = OrdemServico.abrir(input.clienteId(), input.veiculoId(),
-                    input.descricaoProblema(), clock.instant());
+                    input.descricaoProblema(), input.agendamentoDiagnostico(), clock.instant());
             for (ItemServicoInput servico : input.servicos()) {
                 itens.incluirServico(ordemServico, servico);
             }

@@ -17,24 +17,37 @@ public class OrdemServico {
     private final Integer id;
     private final Integer clienteId;
     private final Integer veiculoId;
+    private Integer mecanicoId;
     private StatusOrdemServico status;
     private final String descricaoProblema;
     private String diagnosticoTecnico;
+    private final Instant agendamentoDiagnostico;
+    private Instant agendamentoServico;
+    private StatusAprovacao statusAprovacaoRejeicao;
+    private Instant dataAprovacaoRejeicao;
     private Dinheiro valorTotal;
     private final Instant dataAbertura;
     private Instant dataConclusao;
-    private final List<ItemServico> servicos;
-    private final List<ItemPeca> pecas;
+    private final List<OrdemServicoServico> servicos;
+    private final List<OrdemServicoPecaInsumo> pecas;
 
-    private OrdemServico(Integer id, Integer clienteId, Integer veiculoId, StatusOrdemServico status,
-                         String descricaoProblema, String diagnosticoTecnico, Instant dataAbertura,
-                         Instant dataConclusao, List<ItemServico> servicos, List<ItemPeca> pecas) {
+    private OrdemServico(Integer id, Integer clienteId, Integer veiculoId, Integer mecanicoId,
+                         StatusOrdemServico status, String descricaoProblema, String diagnosticoTecnico,
+                         Instant agendamentoDiagnostico, Instant agendamentoServico,
+                         StatusAprovacao statusAprovacaoRejeicao, Instant dataAprovacaoRejeicao, Instant dataAbertura,
+                         Instant dataConclusao, List<OrdemServicoServico> servicos,
+                         List<OrdemServicoPecaInsumo> pecas) {
         this.id = id;
         this.clienteId = clienteId;
         this.veiculoId = veiculoId;
+        this.mecanicoId = mecanicoId;
         this.status = status;
         this.descricaoProblema = descricaoProblema;
         this.diagnosticoTecnico = diagnosticoTecnico;
+        this.agendamentoDiagnostico = agendamentoDiagnostico;
+        this.agendamentoServico = agendamentoServico;
+        this.statusAprovacaoRejeicao = statusAprovacaoRejeicao;
+        this.dataAprovacaoRejeicao = dataAprovacaoRejeicao;
         this.dataAbertura = dataAbertura;
         this.dataConclusao = dataConclusao;
         this.servicos = new ArrayList<>(servicos);
@@ -42,16 +55,22 @@ public class OrdemServico {
         recalcularValorTotal();
     }
 
-    public static OrdemServico abrir(Integer clienteId, Integer veiculoId, String descricaoProblema, Instant agora) {
+    public static OrdemServico abrir(Integer clienteId, Integer veiculoId, String descricaoProblema,
+                                     Instant agendamentoDiagnostico, Instant agora) {
         return new OrdemServico(null, Objects.requireNonNull(clienteId, "clienteId"),
-                Objects.requireNonNull(veiculoId, "veiculoId"), StatusOrdemServico.ABERTA, textoOuNulo(descricaoProblema),
-                null, agora, null, List.of(), List.of());
+                Objects.requireNonNull(veiculoId, "veiculoId"), null, StatusOrdemServico.RECEBIDA,
+                textoOuNulo(descricaoProblema), null, agendamentoDiagnostico, null, null, null, agora, null,
+                List.of(), List.of());
     }
 
-    public static OrdemServico restaurar(Integer id, Integer clienteId, Integer veiculoId, StatusOrdemServico status,
-                                         String descricaoProblema, String diagnosticoTecnico, Instant dataAbertura,
-                                         Instant dataConclusao, List<ItemServico> servicos, List<ItemPeca> pecas) {
-        return new OrdemServico(id, clienteId, veiculoId, status, descricaoProblema, diagnosticoTecnico,
+    public static OrdemServico restaurar(Integer id, Integer clienteId, Integer veiculoId, Integer mecanicoId,
+                                         StatusOrdemServico status, String descricaoProblema,
+                                         String diagnosticoTecnico, Instant agendamentoDiagnostico,
+                                         Instant agendamentoServico, StatusAprovacao statusAprovacaoRejeicao,
+                                         Instant dataAprovacaoRejeicao, Instant dataAbertura, Instant dataConclusao,
+                                         List<OrdemServicoServico> servicos, List<OrdemServicoPecaInsumo> pecas) {
+        return new OrdemServico(id, clienteId, veiculoId, mecanicoId, status, descricaoProblema, diagnosticoTecnico,
+                agendamentoDiagnostico, agendamentoServico, statusAprovacaoRejeicao, dataAprovacaoRejeicao,
                 dataAbertura, dataConclusao, servicos, pecas);
     }
 
@@ -64,13 +83,13 @@ public class OrdemServico {
 
     public void incluirServico(Integer servicoId, Dinheiro precoFinal) {
         garantirItensEditaveis();
-        servicos.add(new ItemServico(null, servicoId, precoFinal));
+        servicos.add(new OrdemServicoServico(null, servicoId, precoFinal));
         recalcularValorTotal();
     }
 
-    public ItemServico removerServico(Integer itemId) {
+    public OrdemServicoServico removerServico(Integer itemId) {
         garantirItensEditaveis();
-        ItemServico item = servicos.stream()
+        OrdemServicoServico item = servicos.stream()
                 .filter(servico -> Objects.equals(servico.id(), itemId))
                 .findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("Serviço da OS", itemId));
@@ -81,13 +100,13 @@ public class OrdemServico {
 
     public void incluirPeca(Integer pecaInsumoId, Quantidade quantidade, Dinheiro precoUnitario) {
         garantirItensEditaveis();
-        pecas.add(ItemPeca.novo(pecaInsumoId, quantidade, precoUnitario));
+        pecas.add(OrdemServicoPecaInsumo.novo(pecaInsumoId, quantidade, precoUnitario));
         recalcularValorTotal();
     }
 
-    public ItemPeca removerPeca(Integer itemId) {
+    public OrdemServicoPecaInsumo removerPeca(Integer itemId) {
         garantirItensEditaveis();
-        ItemPeca item = pecas.stream()
+        OrdemServicoPecaInsumo item = pecas.stream()
                 .filter(peca -> Objects.equals(peca.id(), itemId))
                 .findFirst()
                 .orElseThrow(() -> new ResourceNotFoundException("Peça da OS", itemId));
@@ -96,24 +115,45 @@ public class OrdemServico {
         return item;
     }
 
+    public void iniciarDiagnostico(Integer funcionarioId) {
+        transicionar(StatusOrdemServico.RECEBIDA, StatusOrdemServico.EM_DIAGNOSTICO);
+        this.mecanicoId = Objects.requireNonNull(funcionarioId, "funcionarioId");
+    }
+
     public void registrarDiagnostico(String diagnostico) {
         if (diagnostico == null || diagnostico.isBlank()) {
             throw new ValidationException("Diagnóstico técnico é obrigatório");
         }
-        transicionar(StatusOrdemServico.ABERTA, StatusOrdemServico.EM_ANDAMENTO);
+        if (status == StatusOrdemServico.EM_DIAGNOSTICO && servicos.isEmpty()) {
+            throw new BusinessRuleException("ORDEM_SEM_SERVICOS",
+                    "O orçamento precisa de ao menos um serviço para ser enviado ao cliente");
+        }
+        transicionar(StatusOrdemServico.EM_DIAGNOSTICO, StatusOrdemServico.AGUARDANDO_APROVACAO);
         this.diagnosticoTecnico = diagnostico.trim();
+        this.statusAprovacaoRejeicao = StatusAprovacao.PENDENTE;
+    }
+
+    public void aprovarOrcamento(Instant agendamentoServico, Instant agora) {
+        transicionar(StatusOrdemServico.AGUARDANDO_APROVACAO, StatusOrdemServico.EM_EXECUCAO);
+        this.statusAprovacaoRejeicao = StatusAprovacao.APROVADO;
+        this.dataAprovacaoRejeicao = agora;
+        this.agendamentoServico = agendamentoServico;
+    }
+
+    public void rejeitarOrcamento(Instant agora) {
+        transicionar(StatusOrdemServico.AGUARDANDO_APROVACAO, StatusOrdemServico.FINALIZADA);
+        this.statusAprovacaoRejeicao = StatusAprovacao.REJEITADO;
+        this.dataAprovacaoRejeicao = agora;
+        this.dataConclusao = agora;
     }
 
     public void finalizar(Instant agora) {
-        if (status == StatusOrdemServico.EM_ANDAMENTO && servicos.isEmpty()) {
-            throw new BusinessRuleException("ORDEM_SEM_SERVICOS", "A OS precisa de ao menos um serviço para ser concluída");
-        }
-        transicionar(StatusOrdemServico.EM_ANDAMENTO, StatusOrdemServico.CONCLUIDA);
+        transicionar(StatusOrdemServico.EM_EXECUCAO, StatusOrdemServico.FINALIZADA);
         this.dataConclusao = agora;
     }
 
     public void entregar() {
-        transicionar(StatusOrdemServico.CONCLUIDA, StatusOrdemServico.ENTREGUE);
+        transicionar(StatusOrdemServico.FINALIZADA, StatusOrdemServico.ENTREGUE);
     }
 
     private void transicionar(StatusOrdemServico esperado, StatusOrdemServico novo) {
@@ -126,10 +166,10 @@ public class OrdemServico {
 
     private void recalcularValorTotal() {
         Dinheiro total = Dinheiro.ZERO;
-        for (ItemServico servico : servicos) {
+        for (OrdemServicoServico servico : servicos) {
             total = total.somar(servico.precoFinal());
         }
-        for (ItemPeca peca : pecas) {
+        for (OrdemServicoPecaInsumo peca : pecas) {
             total = total.somar(peca.subtotal());
         }
         this.valorTotal = total;
@@ -151,6 +191,10 @@ public class OrdemServico {
         return veiculoId;
     }
 
+    public Integer mecanicoId() {
+        return mecanicoId;
+    }
+
     public StatusOrdemServico status() {
         return status;
     }
@@ -161,6 +205,22 @@ public class OrdemServico {
 
     public String diagnosticoTecnico() {
         return diagnosticoTecnico;
+    }
+
+    public Instant agendamentoDiagnostico() {
+        return agendamentoDiagnostico;
+    }
+
+    public Instant agendamentoServico() {
+        return agendamentoServico;
+    }
+
+    public StatusAprovacao statusAprovacaoRejeicao() {
+        return statusAprovacaoRejeicao;
+    }
+
+    public Instant dataAprovacaoRejeicao() {
+        return dataAprovacaoRejeicao;
     }
 
     public Dinheiro valorTotal() {
@@ -175,11 +235,11 @@ public class OrdemServico {
         return dataConclusao;
     }
 
-    public List<ItemServico> servicos() {
+    public List<OrdemServicoServico> servicos() {
         return List.copyOf(servicos);
     }
 
-    public List<ItemPeca> pecas() {
+    public List<OrdemServicoPecaInsumo> pecas() {
         return List.copyOf(pecas);
     }
 }

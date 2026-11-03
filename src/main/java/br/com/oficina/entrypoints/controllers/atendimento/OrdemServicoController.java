@@ -4,10 +4,12 @@ import br.com.oficina.application.dto.atendimento.OrdemServicoOutput;
 import br.com.oficina.application.dto.shared.PageQuery;
 import br.com.oficina.application.dto.shared.PageResult;
 import br.com.oficina.application.usecase.atendimento.AbrirOrdemServicoUseCase;
+import br.com.oficina.application.usecase.atendimento.AvaliarOrcamentoUseCase;
 import br.com.oficina.application.usecase.atendimento.EntregarVeiculoUseCase;
 import br.com.oficina.application.usecase.atendimento.FinalizarOrdemServicoUseCase;
 import br.com.oficina.application.usecase.atendimento.IncluirPecaNaOrdemUseCase;
 import br.com.oficina.application.usecase.atendimento.IncluirServicoNaOrdemUseCase;
+import br.com.oficina.application.usecase.atendimento.IniciarDiagnosticoUseCase;
 import br.com.oficina.application.usecase.atendimento.ListarOrdensServicoUseCase;
 import br.com.oficina.application.usecase.atendimento.ObterOrdemServicoUseCase;
 import br.com.oficina.application.usecase.atendimento.RegistrarDiagnosticoUseCase;
@@ -15,6 +17,7 @@ import br.com.oficina.application.usecase.atendimento.RemoverPecaDaOrdemUseCase;
 import br.com.oficina.application.usecase.atendimento.RemoverServicoDaOrdemUseCase;
 import br.com.oficina.contract.api.OrdensServicoApi;
 import br.com.oficina.contract.model.AbrirOrdemServicoRequestDto;
+import br.com.oficina.contract.model.AvaliacaoOrcamentoRequestDto;
 import br.com.oficina.contract.model.DiagnosticoRequestDto;
 import br.com.oficina.contract.model.ItemPecaRequestDto;
 import br.com.oficina.contract.model.ItemServicoRequestDto;
@@ -38,9 +41,7 @@ public class OrdemServicoController implements OrdensServicoApi {
     private final ObterOrdemServicoUseCase obterOrdemServico;
     private final ListarOrdensServicoUseCase listarOrdensServico;
     private final ItensOrdemServicoUseCases itens;
-    private final RegistrarDiagnosticoUseCase registrarDiagnostico;
-    private final FinalizarOrdemServicoUseCase finalizarOrdemServico;
-    private final EntregarVeiculoUseCase entregarVeiculo;
+    private final CicloOrdemServicoUseCases ciclo;
 
     public OrdemServicoController(AbrirOrdemServicoUseCase abrirOrdemServico,
                                   ObterOrdemServicoUseCase obterOrdemServico,
@@ -49,16 +50,17 @@ public class OrdemServicoController implements OrdensServicoApi {
                                   RemoverServicoDaOrdemUseCase removerServico,
                                   IncluirPecaNaOrdemUseCase incluirPeca,
                                   RemoverPecaDaOrdemUseCase removerPeca,
+                                  IniciarDiagnosticoUseCase iniciarDiagnostico,
                                   RegistrarDiagnosticoUseCase registrarDiagnostico,
+                                  AvaliarOrcamentoUseCase avaliarOrcamento,
                                   FinalizarOrdemServicoUseCase finalizarOrdemServico,
                                   EntregarVeiculoUseCase entregarVeiculo) {
         this.abrirOrdemServico = abrirOrdemServico;
         this.obterOrdemServico = obterOrdemServico;
         this.listarOrdensServico = listarOrdensServico;
         this.itens = new ItensOrdemServicoUseCases(incluirServico, removerServico, incluirPeca, removerPeca);
-        this.registrarDiagnostico = registrarDiagnostico;
-        this.finalizarOrdemServico = finalizarOrdemServico;
-        this.entregarVeiculo = entregarVeiculo;
+        this.ciclo = new CicloOrdemServicoUseCases(iniciarDiagnostico, registrarDiagnostico, avaliarOrcamento,
+                finalizarOrdemServico, entregarVeiculo);
     }
 
     @Override
@@ -109,17 +111,29 @@ public class OrdemServicoController implements OrdensServicoApi {
 
     @Override
     public ResponseEntity<OrdemServicoResponseDto> registrarDiagnostico(Integer osId, DiagnosticoRequestDto request) {
-        return ok(registrarDiagnostico.execute(osId, request.getDiagnosticoTecnico()));
+        return ok(ciclo.registrarDiagnostico().execute(osId, request.getDiagnosticoTecnico()));
+    }
+
+    @Override
+    public ResponseEntity<OrdemServicoResponseDto> iniciarDiagnostico(Integer osId) {
+        return ok(ciclo.iniciarDiagnostico().execute(osId, SolicitanteAtual.get()));
+    }
+
+    @Override
+    public ResponseEntity<OrdemServicoResponseDto> avaliarOrcamento(Integer osId,
+                                                                    AvaliacaoOrcamentoRequestDto request) {
+        return ok(ciclo.avaliarOrcamento().execute(OrdemServicoPresenter.toInput(osId, request),
+                SolicitanteAtual.get()));
     }
 
     @Override
     public ResponseEntity<OrdemServicoResponseDto> finalizarOrdemServico(Integer osId) {
-        return ok(finalizarOrdemServico.execute(osId));
+        return ok(ciclo.finalizar().execute(osId));
     }
 
     @Override
     public ResponseEntity<OrdemServicoResponseDto> entregarVeiculo(Integer osId) {
-        return ok(entregarVeiculo.execute(osId));
+        return ok(ciclo.entregar().execute(osId));
     }
 
     private static ResponseEntity<OrdemServicoResponseDto> ok(OrdemServicoOutput ordemServico) {
@@ -130,5 +144,12 @@ public class OrdemServicoController implements OrdensServicoApi {
                                              RemoverServicoDaOrdemUseCase removerServico,
                                              IncluirPecaNaOrdemUseCase incluirPeca,
                                              RemoverPecaDaOrdemUseCase removerPeca) {
+    }
+
+    private record CicloOrdemServicoUseCases(IniciarDiagnosticoUseCase iniciarDiagnostico,
+                                             RegistrarDiagnosticoUseCase registrarDiagnostico,
+                                             AvaliarOrcamentoUseCase avaliarOrcamento,
+                                             FinalizarOrdemServicoUseCase finalizar,
+                                             EntregarVeiculoUseCase entregar) {
     }
 }

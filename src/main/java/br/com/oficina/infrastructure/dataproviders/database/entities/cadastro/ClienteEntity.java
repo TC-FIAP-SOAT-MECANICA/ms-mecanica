@@ -12,7 +12,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "clientes")
+@Table(name = "tb_clientes")
 public class ClienteEntity {
 
     @Id
@@ -36,7 +36,7 @@ public class ClienteEntity {
         var entity = new ClienteEntity();
         entity.id = cliente.id();
         entity.usuarioId = cliente.usuarioId();
-        entity.cpfCnpj = cliente.documento().valor();
+        entity.cpfCnpj = cliente.cpfCnpj().valor();
         entity.cpfCnpjHash = cpfCnpjHash;
         return entity;
     }

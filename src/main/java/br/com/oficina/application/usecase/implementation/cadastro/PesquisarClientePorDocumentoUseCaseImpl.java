@@ -20,7 +20,7 @@ public class PesquisarClientePorDocumentoUseCaseImpl implements PesquisarCliente
     @Override
     public ClienteOutput execute(String documento) {
         Documento valor = new Documento(documento);
-        return repository.findByDocumento(valor)
+        return repository.findByCpfCnpj(valor)
                 .map(cliente -> ClienteOutput.from(cliente, usuarioGateway.buscarContato(cliente.usuarioId())))
                 .orElseThrow(() -> new ResourceNotFoundException("Cliente", valor));
     }

@@ -1,6 +1,6 @@
 package br.com.oficina.infrastructure.dataproviders.database.entities.atendimento;
 
-import br.com.oficina.domain.model.atendimento.ItemServico;
+import br.com.oficina.domain.model.atendimento.OrdemServicoServico;
 import br.com.oficina.domain.valueobject.Dinheiro;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -12,8 +12,8 @@ import jakarta.persistence.Table;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "ordem_servico_servicos")
-public class ItemServicoEntity {
+@Table(name = "tb_ordem_servico_servicos")
+public class OrdemServicoServicoEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -25,18 +25,18 @@ public class ItemServicoEntity {
     @Column(name = "preco_final", nullable = false, precision = 10, scale = 2)
     private BigDecimal precoFinal;
 
-    protected ItemServicoEntity() {
+    protected OrdemServicoServicoEntity() {
     }
 
-    public static ItemServicoEntity from(ItemServico item) {
-        var entity = new ItemServicoEntity();
+    public static OrdemServicoServicoEntity from(OrdemServicoServico item) {
+        var entity = new OrdemServicoServicoEntity();
         entity.id = item.id();
         entity.servicoId = item.servicoId();
         entity.precoFinal = item.precoFinal().valor();
         return entity;
     }
 
-    public ItemServico toDomain() {
-        return new ItemServico(id, servicoId, new Dinheiro(precoFinal));
+    public OrdemServicoServico toDomain() {
+        return new OrdemServicoServico(id, servicoId, new Dinheiro(precoFinal));
     }
 }

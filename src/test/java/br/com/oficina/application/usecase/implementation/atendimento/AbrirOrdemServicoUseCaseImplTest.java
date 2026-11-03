@@ -78,10 +78,10 @@ class AbrirOrdemServicoUseCaseImplTest {
 
     @Test
     void abreOrdemComPrecosDoCatalogoEDoEstoqueSemBaixarPecas() {
-        OrdemServicoOutput os = useCase.execute(new AbrirOrdemServicoInput(1, 10, "Barulho",
+        OrdemServicoOutput os = useCase.execute(new AbrirOrdemServicoInput(1, 10, "Barulho", null,
                 List.of(new ItemServicoInput(100, null)), List.of(new ItemPecaInput(200, new BigDecimal("2")))));
 
-        assertThat(os.status()).isEqualTo(StatusOrdemServico.ABERTA.name());
+        assertThat(os.status()).isEqualTo(StatusOrdemServico.RECEBIDA.name());
         assertThat(os.valorTotal()).isEqualTo("191.00");
         assertThat(os.dataAbertura()).isEqualTo(AGORA);
         assertThat(movimentos).containsExactly("cota 200 2.00");
@@ -89,7 +89,7 @@ class AbrirOrdemServicoUseCaseImplTest {
 
     @Test
     void usaPrecoFinalInformado() {
-        OrdemServicoOutput os = useCase.execute(new AbrirOrdemServicoInput(1, 10, null,
+        OrdemServicoOutput os = useCase.execute(new AbrirOrdemServicoInput(1, 10, null, null,
                 List.of(new ItemServicoInput(100, "99.90")), null));
 
         assertThat(os.servicos().getFirst().precoFinal()).isEqualTo("99.90");
@@ -97,7 +97,7 @@ class AbrirOrdemServicoUseCaseImplTest {
 
     @Test
     void recusaVeiculoDeOutroCliente() {
-        assertThatThrownBy(() -> useCase.execute(new AbrirOrdemServicoInput(2, 10, null, null, null)))
+        assertThatThrownBy(() -> useCase.execute(new AbrirOrdemServicoInput(2, 10, null, null, null, null)))
                 .isInstanceOf(BusinessRuleException.class)
                 .extracting("code").isEqualTo("VEICULO_NAO_PERTENCE_AO_CLIENTE");
         assertThat(repository.salvas).isEmpty();
@@ -105,7 +105,7 @@ class AbrirOrdemServicoUseCaseImplTest {
 
     @Test
     void recusaClienteInexistente() {
-        assertThatThrownBy(() -> useCase.execute(new AbrirOrdemServicoInput(9, 10, null, null, null)))
+        assertThatThrownBy(() -> useCase.execute(new AbrirOrdemServicoInput(9, 10, null, null, null, null)))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -124,8 +124,8 @@ class AbrirOrdemServicoUseCaseImplTest {
         @Override
         public OrdemServico save(OrdemServico os) {
             OrdemServico salva = OrdemServico.restaurar(salvas.size() + 1, os.clienteId(), os.veiculoId(),
-                    os.status(), os.descricaoProblema(), os.diagnosticoTecnico(), os.dataAbertura(),
-                    os.dataConclusao(), os.servicos(), os.pecas());
+                    os.mecanicoId(), os.status(), os.descricaoProblema(), os.diagnosticoTecnico(), os.agendamentoDiagnostico(), os.agendamentoServico(),
+                    os.statusAprovacaoRejeicao(), os.dataAprovacaoRejeicao(), os.dataAbertura(), os.dataConclusao(), os.servicos(), os.pecas());
             salvas.add(salva);
             return salva;
         }

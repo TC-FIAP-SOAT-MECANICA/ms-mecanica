@@ -80,7 +80,7 @@ Na primeira subida é criado um **ADMIN inicial**: `admin@oficina.com` / `admin1
 | Veículos | tudo | tudo, exceto remover | cadastrar, ver e alterar **os próprios** |
 | Serviços (catálogo) | tudo | consultar | consultar |
 | Peças e estoque | tudo | tudo, exceto remover | — |
-| Ordens de serviço | tudo | abrir, itens, diagnóstico, finalizar e entregar | consultar **as próprias** |
+| Ordens de serviço | tudo | abrir, itens, diagnóstico, finalizar e entregar | consultar e aprovar/rejeitar o orçamento **das próprias** |
 
 Sem token → `401 NAO_AUTENTICADO`; perfil sem permissão → `403 ACESSO_NEGADO`. Recurso de outro cliente responde `404`,
 como se não existisse.
@@ -109,17 +109,44 @@ python -c "import os,base64;print(base64.b64encode(os.urandom(32)).decode())"
 
 ## Modelo de dados
 
-As tabelas do ER (usuarios, clientes, veiculos, servicos, pecas_insumos, ordens_servico e os itens da OS) são criadas
-por [`V5__modelo_oficina.sql`](src/main/resources/db/migration/V5__modelo_oficina.sql); a
-[`V6`](src/main/resources/db/migration/V6__criptografar_documento_e_placa.sql) prepara as colunas criptografadas.
+As tabelas seguem o diagrama ER com o prefixo `tb_`. Foram criadas por
+[`V5__modelo_oficina.sql`](src/main/resources/db/migration/V5__modelo_oficina.sql);
+a [`V6`](src/main/resources/db/migration/V6__criptografar_documento_e_placa.sql) prepara as colunas criptografadas e a
+[`V7`](src/main/resources/db/migration/V7__funcionarios_e_ciclo_da_os.sql) aplica o prefixo, cria `tb_funcionarios` e
+os campos de agendamento, mecânico e aprovação da OS.
 
 | Módulo (contexto) | Tabelas | Papel |
 |---|---|---|
-| `identidade` (IAM) | `usuarios` | Login, perfis e regras de acesso |
-| `cadastro` (Clientes e Veículos) | `clientes`, `veiculos` | Clientes 1:1 com usuário CLIENTE; frota |
-| `catalogo` | `servicos` | Mão de obra com preço base |
-| `estoque` | `pecas_insumos` | Peças/insumos, preços e saldo |
-| `atendimento` (Oficina, core) | `ordens_servico` e itens | OS `ABERTA → EM_ANDAMENTO → CONCLUIDA → ENTREGUE` |
+| `identidade` (IAM) | `tb_usuarios` | Login, perfis e regras de acesso |
+| `cadastro` (Clientes, Funcionários e Frota) | `tb_clientes`, `tb_funcionarios`, `tb_veiculos` | Cliente e Funcionário 1:1 com usuário; frota |
+| `catalogo` | `tb_servicos` | Mão de obra com preço base |
+| `estoque` | `tb_pecas_insumos` | Peças/insumos, preços e saldo |
+| `atendimento` (Oficina, core) | `tb_ordens_servico` e itens | Ciclo da OS, abaixo |
+
+### Ciclo da OS
+
+```
+RECEBIDA → EM_DIAGNOSTICO → AGUARDANDO_APROVACAO → EM_EXECUCAO → FINALIZADA → ENTREGUE
+                                    └──── orçamento rejeitado ────→ FINALIZADA
+```
+
+| Passo | Endpoint | Quem | Status |
+|---|---|---|---|
+| Abrir (pode agendar o diagnóstico) | `POST /ordens-servico` | ADMIN, MECANICO | → `RECEBIDA` |
+| Iniciar diagnóstico (quem chama vira o mecânico da OS) | `POST /ordens-servico/{id}/diagnostico/inicio` | ADMIN, MECANICO | → `EM_DIAGNOSTICO` |
+| Registrar laudo e enviar orçamento | `POST /ordens-servico/{id}/diagnostico` | ADMIN, MECANICO | → `AGUARDANDO_APROVACAO` (aprovação `PENDENTE`) |
+| Aprovar (pode agendar o serviço) ou rejeitar | `POST /ordens-servico/{id}/aprovacao` | ADMIN, CLIENTE (só as próprias) | → `EM_EXECUCAO` ou `FINALIZADA` |
+| Concluir o serviço | `POST /ordens-servico/{id}/finalizacao` | ADMIN, MECANICO | → `FINALIZADA` |
+| Entregar o veículo | `POST /ordens-servico/{id}/entrega` | ADMIN, MECANICO | → `ENTREGUE` |
+
+Itens podem ser alterados em `RECEBIDA`, `EM_DIAGNOSTICO` e `EM_EXECUCAO`. As peças só saem do estoque quando o
+orçamento é aprovado; em `EM_EXECUCAO`, incluir peça baixa na hora e removê-la devolve ao estoque.
+
+Todo usuário ADMIN ou MECANICO vira um **Funcionário** (ativo): a Identidade publica o evento `UsuarioCadastrado` e o
+Cadastro o contrata na mesma transação. Só funcionário ativo pode assumir o diagnóstico de uma OS.
+
+Os nomes no código seguem a linguagem ubíqua do projeto: `OrdemServico`, `OrdemServicoServico`,
+`OrdemServicoPecaInsumo`, `statusAprovacaoRejeicao` (`PENDENTE`, `APROVADO`, `REJEITADO`), `cpfCnpj`, `PecaInsumo`...
 
 ## Estrutura de pastas
 

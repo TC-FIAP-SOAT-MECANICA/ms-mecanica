@@ -26,7 +26,7 @@ class ClienteRepositoryImpl implements ClienteRepository {
     @Override
     public Cliente save(Cliente cliente) {
         ClienteEntity salvo = jpaRepository.saveAndFlush(
-                ClienteEntity.from(cliente, indiceCego.hash(cliente.documento().valor())));
+                ClienteEntity.from(cliente, indiceCego.hash(cliente.cpfCnpj().valor())));
         return cliente.comId(salvo.id());
     }
 
@@ -36,8 +36,8 @@ class ClienteRepositoryImpl implements ClienteRepository {
     }
 
     @Override
-    public Optional<Cliente> findByDocumento(Documento documento) {
-        return jpaRepository.findByCpfCnpjHash(indiceCego.hash(documento.valor())).map(ClienteEntity::toDomain);
+    public Optional<Cliente> findByCpfCnpj(Documento cpfCnpj) {
+        return jpaRepository.findByCpfCnpjHash(indiceCego.hash(cpfCnpj.valor())).map(ClienteEntity::toDomain);
     }
 
     @Override
@@ -51,8 +51,8 @@ class ClienteRepositoryImpl implements ClienteRepository {
     }
 
     @Override
-    public boolean existsByDocumento(Documento documento) {
-        return jpaRepository.existsByCpfCnpjHash(indiceCego.hash(documento.valor()));
+    public boolean existsByCpfCnpj(Documento cpfCnpj) {
+        return jpaRepository.existsByCpfCnpjHash(indiceCego.hash(cpfCnpj.valor()));
     }
 
     @Override

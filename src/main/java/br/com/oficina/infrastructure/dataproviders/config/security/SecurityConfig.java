@@ -18,9 +18,9 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
 
+import java.util.Base64;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
-import java.util.Base64;
 
 import static org.springframework.http.HttpMethod.*;
 
@@ -76,6 +76,7 @@ public class SecurityConfig {
 
                         .requestMatchers(GET, "/ordens-servico", "/ordens-servico/*")
                         .hasAnyRole(ADMIN, MECANICO, CLIENTE)
+                        .requestMatchers(POST, "/ordens-servico/*/aprovacao").hasAnyRole(ADMIN, CLIENTE)
                         .requestMatchers("/ordens-servico", "/ordens-servico/**").hasAnyRole(ADMIN, MECANICO)
 
                         .requestMatchers("/metricas/**", "/actuator/**").hasRole(ADMIN)

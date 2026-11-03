@@ -1,17 +1,20 @@
 package br.com.oficina.entrypoints.controllers.presenter.atendimento;
 
 import br.com.oficina.application.dto.atendimento.AbrirOrdemServicoInput;
+import br.com.oficina.application.dto.atendimento.AvaliarOrcamentoInput;
 import br.com.oficina.application.dto.atendimento.ItemPecaInput;
 import br.com.oficina.application.dto.atendimento.ItemServicoInput;
 import br.com.oficina.application.dto.atendimento.OrdemServicoOutput;
 import br.com.oficina.application.dto.shared.PageResult;
 import br.com.oficina.contract.model.AbrirOrdemServicoRequestDto;
+import br.com.oficina.contract.model.AvaliacaoOrcamentoRequestDto;
 import br.com.oficina.contract.model.ItemPecaRequestDto;
 import br.com.oficina.contract.model.ItemPecaResponseDto;
 import br.com.oficina.contract.model.ItemServicoRequestDto;
 import br.com.oficina.contract.model.ItemServicoResponseDto;
 import br.com.oficina.contract.model.OrdemServicoResponseDto;
 import br.com.oficina.contract.model.PaginaOrdensServicoDto;
+import br.com.oficina.contract.model.StatusAprovacaoDto;
 import br.com.oficina.contract.model.StatusOSDto;
 
 import java.time.Instant;
@@ -27,9 +30,13 @@ public final class OrdemServicoPresenter {
 
     public static AbrirOrdemServicoInput toInput(AbrirOrdemServicoRequestDto request) {
         return new AbrirOrdemServicoInput(request.getClienteId(), request.getVeiculoId(),
-                request.getDescricaoProblema(),
+                request.getDescricaoProblema(), toInstant(request.getAgendamentoDiagnostico()),
                 request.getServicos().stream().map(OrdemServicoPresenter::toInput).toList(),
                 request.getPecas().stream().map(OrdemServicoPresenter::toInput).toList());
+    }
+
+    public static AvaliarOrcamentoInput toInput(Integer osId, AvaliacaoOrcamentoRequestDto request) {
+        return new AvaliarOrcamentoInput(osId, request.getAprovado(), toInstant(request.getAgendamentoServico()));
     }
 
     public static ItemServicoInput toInput(ItemServicoRequestDto request) {
@@ -49,10 +56,17 @@ public final class OrdemServicoPresenter {
                 .id(os.id())
                 .clienteId(os.clienteId())
                 .veiculoId(os.veiculoId())
+                .mecanicoId(os.mecanicoId())
                 .status(StatusOSDto.fromValue(os.status()))
                 .descricaoProblema(os.descricaoProblema())
                 .diagnosticoTecnico(os.diagnosticoTecnico())
                 .valorTotal(os.valorTotal())
+                .agendamentoDiagnostico(toOffsetDateTime(os.agendamentoDiagnostico()))
+                .agendamentoServico(toOffsetDateTime(os.agendamentoServico()))
+                .statusAprovacaoRejeicao(os.statusAprovacaoRejeicao() == null
+                        ? null
+                        : StatusAprovacaoDto.fromValue(os.statusAprovacaoRejeicao()))
+                .dataAprovacaoRejeicao(toOffsetDateTime(os.dataAprovacaoRejeicao()))
                 .dataAbertura(toOffsetDateTime(os.dataAbertura()))
                 .dataConclusao(toOffsetDateTime(os.dataConclusao()))
                 .servicos(os.servicos().stream().map(OrdemServicoPresenter::toResponse).toList())
@@ -86,5 +100,9 @@ public final class OrdemServicoPresenter {
 
     private static OffsetDateTime toOffsetDateTime(Instant instant) {
         return instant == null ? null : instant.atOffset(ZoneOffset.UTC);
+    }
+
+    private static Instant toInstant(OffsetDateTime dataHora) {
+        return dataHora == null ? null : dataHora.toInstant();
     }
 }

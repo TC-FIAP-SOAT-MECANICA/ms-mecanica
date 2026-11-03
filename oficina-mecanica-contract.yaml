@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: Oficina Mecânica — Sistema Integrado de Atendimento e Execução de Serviços (MVP)
-  version: 4.1.0
+  version: 4.2.0
   description: |
     API RESTful do back-end monolítico da oficina mecânica, construída com **DDD** e **Clean Architecture**
     e seguindo o **OWASP API Security Top 10 (2023)**.
@@ -76,7 +76,7 @@ info:
     | Veículos | tudo | tudo, exceto remover | cadastrar, ver e alterar **os próprios** |
     | Serviços (catálogo) | tudo | consultar | consultar |
     | Peças e estoque | tudo | tudo, exceto remover | — |
-    | Ordens de serviço | tudo | abrir, itens, diagnóstico, finalizar e entregar | consultar **as próprias** |
+    | Ordens de serviço | tudo | abrir, itens, diagnóstico, finalizar e entregar | consultar e aprovar/rejeitar o orçamento **das próprias** |
     | Métricas | tudo | — | — |
 
     Sem token → `401 NAO_AUTENTICADO`. Perfil sem permissão → `403 ACESSO_NEGADO`.
@@ -86,15 +86,18 @@ info:
 
     | Comando | Perfil | Transição |
     |---|---|---|
-    | `POST /ordens-servico` | ADMIN, MECANICO | → `ABERTA` |
-    | `POST /ordens-servico/{id}/diagnostico` | MECANICO | `ABERTA` → `EM_ANDAMENTO` (registra o laudo técnico) |
-    | `POST /ordens-servico/{id}/finalizacao` | MECANICO | `EM_ANDAMENTO` → `CONCLUIDA` (registra `dataConclusao`) |
-    | `POST /ordens-servico/{id}/entrega` | ADMIN, MECANICO | `CONCLUIDA` → `ENTREGUE` |
+    | `POST /ordens-servico` | ADMIN, MECANICO | → `RECEBIDA` (pode agendar o diagnóstico) |
+    | `POST /ordens-servico/{id}/diagnostico/inicio` | ADMIN, MECANICO | `RECEBIDA` → `EM_DIAGNOSTICO` (quem chama vira o mecânico da OS) |
+    | `POST /ordens-servico/{id}/diagnostico` | ADMIN, MECANICO | `EM_DIAGNOSTICO` → `AGUARDANDO_APROVACAO` (laudo + orçamento) |
+    | `POST /ordens-servico/{id}/aprovacao` | ADMIN, CLIENTE | `AGUARDANDO_APROVACAO` → `EM_EXECUCAO` (aprovado) ou → `FINALIZADA` (rejeitado) |
+    | `POST /ordens-servico/{id}/finalizacao` | ADMIN, MECANICO | `EM_EXECUCAO` → `FINALIZADA` (registra `dataConclusao`) |
+    | `POST /ordens-servico/{id}/entrega` | ADMIN, MECANICO | `FINALIZADA` → `ENTREGUE` |
 
-    Serviços e peças só podem ser incluídos/removidos em `ABERTA` ou `EM_ANDAMENTO`. Em `ABERTA` as peças são só
-    orçadas: o estoque não muda. A baixa acontece quando a OS passa para `EM_ANDAMENTO` (diagnóstico registrado),
-    momento em que o mecânico de fato usa as peças. Em `EM_ANDAMENTO`, incluir peça dá baixa na hora e removê-la
-    devolve a quantidade. `valorTotal` é sempre a soma dos itens.
+    Serviços e peças podem ser incluídos/removidos em `RECEBIDA`, `EM_DIAGNOSTICO` e `EM_EXECUCAO`. Até a aprovação
+    as peças são só orçadas: o estoque não muda. A baixa de todas as peças acontece quando o cliente aprova o
+    orçamento e a OS vai para `EM_EXECUCAO`. Em `EM_EXECUCAO`, incluir peça dá baixa na hora e removê-la devolve a
+    quantidade. Orçamento rejeitado finaliza a OS sem execução (o veículo segue para entrega). `valorTotal` é sempre
+    a soma dos itens.
     Transição inválida → `409` com `codigo = OS_TRANSICAO_INVALIDA`.
   contact:
     name: Grupo SOAT — Fase 1
@@ -533,7 +536,7 @@ paths:
           in: query
           style: form
           explode: true
-          schema: { type: array, maxItems: 4, uniqueItems: true, items: { $ref: '#/components/schemas/StatusOS' } }
+          schema: { type: array, maxItems: 6, uniqueItems: true, items: { $ref: '#/components/schemas/StatusOS' } }
         - { name: clienteId, in: query, schema: { $ref: '#/components/schemas/Id' } }
         - { name: veiculoId, in: query, schema: { $ref: '#/components/schemas/Id' } }
       responses:
@@ -545,7 +548,8 @@ paths:
       description: |
         O veículo deve pertencer ao cliente (`422 VEICULO_NAO_PERTENCE_AO_CLIENTE`). Os serviços entram com o preço
         base do catálogo (ou `precoFinal`, se informado) e as peças com o preço de venda do estoque, sem baixar o
-        saldo: a baixa acontece no diagnóstico. Status inicial `ABERTA`.
+        saldo: a baixa acontece na aprovação do orçamento. Status inicial `RECEBIDA`; `agendamentoDiagnostico`
+        é opcional.
       operationId: abrirOrdemServico
       x-roles: [ADMIN, MECANICO]
       parameters:
@@ -622,7 +626,7 @@ paths:
       tags: [Atendimento — Ordens de Serviço]
       summary: Inclui peça ou insumo na OS
       description: |
-        Congela o preço de venda atual. Em `ABERTA` a peça só entra no orçamento; em `EM_ANDAMENTO` dá baixa no
+        Congela o preço de venda atual. Antes da aprovação a peça só entra no orçamento; em `EM_EXECUCAO` dá baixa no
         estoque na hora (`422 ESTOQUE_INSUFICIENTE`). Peça em unidade contável exige quantidade inteira
         (`422 QUANTIDADE_FRACIONADA`).
       operationId: incluirPecaNaOrdem
@@ -644,7 +648,7 @@ paths:
     delete:
       tags: [Atendimento — Ordens de Serviço]
       summary: Remove peça ou insumo da OS
-      description: Em `EM_ANDAMENTO` devolve a quantidade ao estoque; em `ABERTA` só retira do orçamento.
+      description: Em `EM_EXECUCAO` devolve a quantidade ao estoque; antes da aprovação só retira do orçamento.
       operationId: removerPecaDaOrdem
       x-roles: [ADMIN, MECANICO]
       responses:
@@ -653,20 +657,63 @@ paths:
         '409': { $ref: '#/components/responses/Conflict' }
         default: { $ref: '#/components/responses/Erro' }
 
+  /ordens-servico/{osId}/diagnostico/inicio:
+    parameters:
+      - $ref: '#/components/parameters/OsId'
+    post:
+      tags: [Atendimento — Ordens de Serviço]
+      summary: Inicia o diagnóstico
+      description: |
+        `RECEBIDA` → `EM_DIAGNOSTICO`. O funcionário autenticado passa a ser o mecânico da OS (`mecanicoId`);
+        funcionário inativo → `422 FUNCIONARIO_INATIVO`.
+      operationId: iniciarDiagnostico
+      x-roles: [ADMIN, MECANICO]
+      responses:
+        '200': { $ref: '#/components/responses/OrdemServico' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Erro' }
+
   /ordens-servico/{osId}/diagnostico:
     parameters:
       - $ref: '#/components/parameters/OsId'
     post:
       tags: [Atendimento — Ordens de Serviço]
-      summary: Registra diagnóstico técnico e inicia o atendimento
+      summary: Registra o diagnóstico técnico e envia o orçamento ao cliente
       description: |
-        `ABERTA` → `EM_ANDAMENTO`. Dá baixa no estoque de todas as peças da OS, na mesma transação: se faltar
-        saldo de alguma, nada muda e a OS continua `ABERTA` (`422 ESTOQUE_INSUFICIENTE`).
+        `EM_DIAGNOSTICO` → `AGUARDANDO_APROVACAO`, com `statusAprovacaoRejeicao = PENDENTE`. O orçamento precisa de
+        ao menos um serviço (`422 ORDEM_SEM_SERVICOS`). Não mexe no estoque.
       operationId: registrarDiagnostico
       x-roles: [ADMIN, MECANICO]
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: '#/components/schemas/DiagnosticoRequest' } } }
+      responses:
+        '200': { $ref: '#/components/responses/OrdemServico' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        default: { $ref: '#/components/responses/Erro' }
+
+  /ordens-servico/{osId}/aprovacao:
+    parameters:
+      - $ref: '#/components/parameters/OsId'
+    post:
+      tags: [Atendimento — Ordens de Serviço]
+      summary: Aprova ou rejeita o orçamento
+      description: |
+        Só em `AGUARDANDO_APROVACAO`. Aprovado → `EM_EXECUCAO`: dá baixa no estoque de todas as peças da OS na mesma
+        transação (se faltar saldo, nada muda: `422 ESTOQUE_INSUFICIENTE`) e registra `agendamentoServico`, se
+        informado. Rejeitado → `FINALIZADA` sem execução. O CLIENTE só avalia as próprias OS.
+      operationId: avaliarOrcamento
+      x-roles: [ADMIN, CLIENTE]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AvaliacaoOrcamentoRequest' }
+            example: { aprovado: true, agendamentoServico: '2026-11-10T09:00:00-03:00' }
       responses:
         '200': { $ref: '#/components/responses/OrdemServico' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -680,7 +727,7 @@ paths:
     post:
       tags: [Atendimento — Ordens de Serviço]
       summary: Conclui o serviço
-      description: '`EM_ANDAMENTO` → `CONCLUIDA`. Exige ao menos um serviço (`422 ORDEM_SEM_SERVICOS`) e registra `dataConclusao`.'
+      description: '`EM_EXECUCAO` → `FINALIZADA`. Registra `dataConclusao`.'
       operationId: finalizarOrdemServico
       x-roles: [ADMIN, MECANICO]
       responses:
@@ -696,7 +743,7 @@ paths:
     post:
       tags: [Atendimento — Ordens de Serviço]
       summary: Registra entrega do veículo
-      description: '`CONCLUIDA` → `ENTREGUE`.'
+      description: '`FINALIZADA` → `ENTREGUE`.'
       operationId: entregarVeiculo
       x-roles: [ADMIN, MECANICO]
       responses:
@@ -710,7 +757,7 @@ paths:
     get:
       tags: [Métricas]
       summary: Tempo médio de execução das OS
-      description: Sobre OS `CONCLUIDA`/`ENTREGUE` no período (máx. 366 dias), de `dataAbertura` até `dataConclusao`.
+      description: Sobre OS `FINALIZADA`/`ENTREGUE` no período (máx. 366 dias), de `dataAbertura` até `dataConclusao`.
       operationId: calcularTempoMedioExecucao
       x-roles: [ADMIN]
       parameters:
@@ -815,7 +862,7 @@ components:
             title: Conflict
             status: 409
             codigo: OS_TRANSICAO_INVALIDA
-            detail: Não é possível finalizar uma OS com status ABERTA
+            detail: Não é possível passar a OS de RECEBIDA para FINALIZADA
             traceId: 1b4e28ba-2fa1-11d2-883f-0016d3cca427
     UnprocessableEntity:
       description: Regra de negócio violada
@@ -908,7 +955,11 @@ components:
     # ─────────────── Enums de domínio ───────────────
     StatusOS:
       type: string
-      enum: [ABERTA, EM_ANDAMENTO, CONCLUIDA, ENTREGUE]
+      enum: [RECEBIDA, EM_DIAGNOSTICO, AGUARDANDO_APROVACAO, EM_EXECUCAO, FINALIZADA, ENTREGUE]
+    StatusAprovacao:
+      type: string
+      enum: [PENDENTE, APROVADO, REJEITADO]
+      description: Veredito do cliente sobre o orçamento. `PENDENTE` desde o envio do orçamento até a decisão.
     TipoDocumento:
       type: string
       enum: [CPF, CNPJ]
@@ -938,6 +989,7 @@ components:
         - OS_TRANSICAO_INVALIDA
         - OS_ITEM_NAO_EDITAVEL
         - ORDEM_SEM_SERVICOS
+        - FUNCIONARIO_INATIVO
         - IDEMPOTENCIA_CONFLITANTE
         - LIMITE_REQUISICOES
         - NAO_IMPLEMENTADO
@@ -1128,6 +1180,7 @@ components:
         clienteId: { $ref: '#/components/schemas/Id' }
         veiculoId: { $ref: '#/components/schemas/Id' }
         descricaoProblema: { $ref: '#/components/schemas/TextoLivre' }
+        agendamentoDiagnostico: { type: string, format: date-time, description: Data e hora agendadas para o diagnóstico }
         servicos:
           type: array
           maxItems: 50
@@ -1136,6 +1189,13 @@ components:
           type: array
           maxItems: 50
           items: { $ref: '#/components/schemas/ItemPecaRequest' }
+    AvaliacaoOrcamentoRequest:
+      type: object
+      additionalProperties: false
+      required: [aprovado]
+      properties:
+        aprovado: { type: boolean, description: '`true` aprova o orçamento; `false` rejeita' }
+        agendamentoServico: { type: string, format: date-time, description: Data e hora agendadas para a execução (só na aprovação) }
     DiagnosticoRequest:
       type: object
       additionalProperties: false
@@ -1164,10 +1224,15 @@ components:
         id: { $ref: '#/components/schemas/Id' }
         clienteId: { $ref: '#/components/schemas/Id' }
         veiculoId: { $ref: '#/components/schemas/Id' }
+        mecanicoId: { allOf: [{ $ref: '#/components/schemas/Id' }], nullable: true, description: Funcionário que assumiu o diagnóstico }
         status: { $ref: '#/components/schemas/StatusOS' }
         descricaoProblema: { type: string }
         diagnosticoTecnico: { type: string }
         valorTotal: { $ref: '#/components/schemas/Dinheiro' }
+        agendamentoDiagnostico: { type: string, format: date-time, nullable: true }
+        agendamentoServico: { type: string, format: date-time, nullable: true }
+        statusAprovacaoRejeicao: { allOf: [{ $ref: '#/components/schemas/StatusAprovacao' }], nullable: true }
+        dataAprovacaoRejeicao: { type: string, format: date-time, nullable: true }
         dataAbertura: { type: string, format: date-time }
         dataConclusao: { type: string, format: date-time, nullable: true }
         servicos:
