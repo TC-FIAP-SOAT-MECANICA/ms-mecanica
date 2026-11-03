@@ -66,6 +66,28 @@ Para testar, importe [`postman/oficina-mecanica.postman_collection.json`](postma
 no Postman e use **Run collection**: ela faz login como ADMIN, cria um mecânico e um cliente, e exercita cada endpoint
 com o token do perfil certo, incluindo os acessos que devem ser negados.
 
+Para ver só o caminho feliz de uma OS, use
+[`postman/oficina-mecanica-fluxo-os.postman_collection.json`](postman/oficina-mecanica-fluxo-os.postman_collection.json):
+22 passos numerados, do cadastro de mecânico, cliente, veículo, serviço e peça até a entrega do veículo, passando por
+diagnóstico, orçamento, aprovação do cliente e baixa do estoque.
+
+## Testes e cobertura
+
+```bash
+mvn verify
+```
+
+Roda os testes unitários (domínio e casos de uso) e os de integração (`src/test/java/br/com/oficina/integracao`), que
+sobem a aplicação com H2 em memória e exercitam a API via MockMvc: autenticação, permissões por perfil, cadastros,
+estoque e o ciclo completo da OS. O JaCoCo gera o relatório em `target/site/jacoco/index.html` e **quebra o build se a
+cobertura de linhas ficar abaixo de 80%**.
+
+Para enviar ao SonarQube/SonarCloud, o `pom.xml` já aponta o relatório (`sonar.coverage.jacoco.xmlReportPaths`):
+
+```bash
+mvn verify sonar:sonar -Dsonar.host.url=<url-do-sonar> -Dsonar.token=<token> -Dsonar.projectKey=ms-mecanica
+```
+
 ## Autenticação e perfis
 
 `POST /api/v1/auth/login` devolve um JWT (60 min) que vai no header `Authorization: Bearer <token>`.

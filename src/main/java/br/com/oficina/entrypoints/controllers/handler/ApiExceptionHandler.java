@@ -9,6 +9,7 @@ import br.com.oficina.domain.exceptions.DomainException;
 import br.com.oficina.domain.exceptions.ResourceNotFoundException;
 import br.com.oficina.domain.exceptions.ValidationException;
 import br.com.oficina.infrastructure.dataproviders.config.web.RequestIdFilter;
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
@@ -23,6 +24,8 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExceptionHandler;
 
+import java.util.stream.Collectors;
+
 @RestControllerAdvice
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
@@ -31,6 +34,15 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(IllegalArgumentException.class)
     ProblemDetail invalidArgument(IllegalArgumentException ex) {
         return problem(HttpStatus.BAD_REQUEST, "VALIDACAO", ex.getMessage());
+    }
+
+    @ExceptionHandler(ConstraintViolationException.class)
+    ProblemDetail constraintViolation(ConstraintViolationException ex) {
+        String detalhe = ex.getConstraintViolations().stream()
+                .map(violacao -> nomeDoCampo(violacao.getPropertyPath().toString()) + ": " + violacao.getMessage())
+                .sorted()
+                .collect(Collectors.joining("; "));
+        return problem(HttpStatus.BAD_REQUEST, "VALIDACAO", detalhe);
     }
 
     @ExceptionHandler(ValidationException.class)
@@ -89,6 +101,10 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
             case 501 -> "NAO_IMPLEMENTADO";
             default -> statusCode.is5xxServerError() ? "ERRO_INTERNO" : "VALIDACAO";
         };
+    }
+
+    private static String nomeDoCampo(String caminho) {
+        return caminho.substring(caminho.lastIndexOf('.') + 1);
     }
 
     private static ProblemDetail problem(HttpStatus status, DomainException ex) {
