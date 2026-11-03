@@ -36,14 +36,14 @@ public class CadastrarClienteUseCaseImpl implements CadastrarClienteUseCase {
 
     @Override
     public ClienteOutput execute(CadastrarClienteInput input) {
-        Documento documento = new Documento(input.documento());
+        Documento cpfCnpj = new Documento(input.documento());
         return unitOfWork.execute(() -> {
-            if (repository.existsByDocumento(documento)) {
+            if (repository.existsByCpfCnpj(cpfCnpj)) {
                 throw new ConflictException("DOCUMENTO_JA_CADASTRADO", "Já existe cliente com este CPF/CNPJ");
             }
             ContatoUsuario contato = usuarioGateway.cadastrarUsuarioCliente(input.nome(), input.email(),
                     input.telefone(), input.senha());
-            Cliente cliente = repository.save(Cliente.cadastrar(contato.usuarioId(), documento));
+            Cliente cliente = repository.save(Cliente.cadastrar(contato.usuarioId(), cpfCnpj));
             return ClienteOutput.from(cliente, contato);
         });
     }

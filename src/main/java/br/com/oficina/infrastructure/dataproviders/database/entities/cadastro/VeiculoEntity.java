@@ -13,7 +13,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
 @Entity
-@Table(name = "veiculos")
+@Table(name = "tb_veiculos")
 public class VeiculoEntity {
 
     @Id

@@ -2629,10 +2629,10 @@
     },
     {
       "name": "7. Ordens de serviço",
-      "description": "ADMIN e MECANICO abrem e executam a OS (ABERTA → EM_ANDAMENTO → CONCLUIDA → ENTREGUE). O CLIENTE acompanha só as próprias OS.",
+      "description": "Ciclo: RECEBIDA → EM_DIAGNOSTICO → AGUARDANDO_APROVACAO → EM_EXECUCAO → FINALIZADA → ENTREGUE. ADMIN e MECANICO executam; o CLIENTE acompanha e aprova/rejeita o orçamento das próprias OS.",
       "item": [
         {
-          "name": "Mecânico abre OS com serviço e peça",
+          "name": "Mecânico abre OS com serviço, peça e agendamento",
           "event": [
             {
               "listen": "test",
@@ -2641,8 +2641,9 @@
                 "exec": [
                   "pm.test('Status 201', () => pm.response.to.have.status(201));",
                   "if (pm.response.code < 300) pm.collectionVariables.set('osId', pm.response.json().id);",
-                  "pm.test('status = ABERTA', () => pm.expect(pm.response.json().status).to.eql(\"ABERTA\"));",
-                  "pm.test('valorTotal = 191.00', () => pm.expect(pm.response.json().valorTotal).to.eql(\"191.00\"));"
+                  "pm.test('status = RECEBIDA', () => pm.expect(pm.response.json().status).to.eql(\"RECEBIDA\"));",
+                  "pm.test('valorTotal = 191.00', () => pm.expect(pm.response.json().valorTotal).to.eql(\"191.00\"));",
+                  "pm.test('Guarda o agendamento do diagnóstico', () => pm.expect(pm.response.json().agendamentoDiagnostico).to.be.a('string'));"
                 ]
               }
             }
@@ -2669,10 +2670,10 @@
                 }
               ]
             },
-            "description": "**Perfil:** MECANICO\n\nServiço pelo preço base (120.00) + 2 × peça (35.50) = 191.00. As peças só entram no orçamento: o estoque não muda enquanto a OS está ABERTA.",
+            "description": "**Perfil:** MECANICO\n\nServiço pelo preço base (120.00) + 2 × peça (35.50) = 191.00. As peças só entram no orçamento: o estoque não muda até o cliente aprovar.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"veiculoId\": {{veiculoId}},\n  \"descricaoProblema\": \"Barulho no motor\",\n  \"servicos\": [\n    {\n      \"servicoId\": {{servicoId}}\n    }\n  ],\n  \"pecas\": [\n    {\n      \"pecaInsumoId\": {{pecaId}},\n      \"quantidade\": 2\n    }\n  ]\n}",
+              "raw": "{\n  \"clienteId\": {{clienteId}},\n  \"veiculoId\": {{veiculoId}},\n  \"descricaoProblema\": \"Barulho no motor\",\n  \"agendamentoDiagnostico\": \"2026-11-10T09:00:00-03:00\",\n  \"servicos\": [\n    {\n      \"servicoId\": {{servicoId}}\n    }\n  ],\n  \"pecas\": [\n    {\n      \"pecaInsumoId\": {{pecaId}},\n      \"quantidade\": 2\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2760,7 +2761,7 @@
             "description": "**Perfil:** MECANICO",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"clienteId\": {{cliente2Id}},\n  \"veiculoId\": {{veiculo2Id}},\n  \"descricaoProblema\": \"Revisão\"\n}",
+              "raw": "{\n  \"clienteId\": {{cliente2Id}},\n  \"veiculoId\": {{veiculo2Id}},\n  \"descricaoProblema\": \"Revisão\",\n  \"servicos\": [\n    {\n      \"servicoId\": {{servicoId}}\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -2778,7 +2779,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('status = ABERTA', () => pm.expect(pm.response.json().status).to.eql(\"ABERTA\"));"
+                  "pm.test('status = RECEBIDA', () => pm.expect(pm.response.json().status).to.eql(\"RECEBIDA\"));"
                 ]
               }
             }
@@ -2985,145 +2986,6 @@
           }
         },
         {
-          "name": "Orçar 1000 peças na OS do segundo cliente",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}/pecas",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "ordens-servico",
-                "{{os2Id}}",
-                "pecas"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tokenMecanico}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "description": "**Perfil:** MECANICO\n\nCom a OS ABERTA a peça só é orçada, então o pedido passa mesmo sem saldo.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"pecaInsumoId\": {{pecaId}},\n  \"quantidade\": 1000\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "[erro] Diagnóstico sem saldo para as peças",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
-                  "pm.test('codigo ESTOQUE_INSUFICIENTE', () => pm.expect(pm.response.json().codigo).to.eql('ESTOQUE_INSUFICIENTE'));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}/diagnostico",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "ordens-servico",
-                "{{os2Id}}",
-                "diagnostico"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tokenMecanico}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "description": "**Perfil:** MECANICO\n\nA baixa acontece ao passar para EM_ANDAMENTO; sem saldo, nada muda.",
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"diagnosticoTecnico\": \"Revisão completa\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
-                }
-              }
-            }
-          }
-        },
-        {
-          "name": "OS sem saldo continua ABERTA",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('status = ABERTA', () => pm.expect(pm.response.json().status).to.eql(\"ABERTA\"));"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}",
-              "host": [
-                "{{baseUrl}}"
-              ],
-              "path": [
-                "ordens-servico",
-                "{{os2Id}}"
-              ]
-            },
-            "auth": {
-              "type": "bearer",
-              "bearer": [
-                {
-                  "key": "token",
-                  "value": "{{tokenMecanico}}",
-                  "type": "string"
-                }
-              ]
-            },
-            "description": "**Perfil:** MECANICO"
-          }
-        },
-        {
           "name": "Incluir peça na OS",
           "event": [
             {
@@ -3225,7 +3087,7 @@
           }
         },
         {
-          "name": "Remover peça da OS (devolve ao estoque)",
+          "name": "Remover peça do orçamento",
           "event": [
             {
               "listen": "test",
@@ -3360,7 +3222,7 @@
           }
         },
         {
-          "name": "[erro] Finalizar sem diagnóstico",
+          "name": "[erro] Diagnóstico sem iniciar",
           "event": [
             {
               "listen": "test",
@@ -3377,14 +3239,14 @@
             "method": "POST",
             "header": [],
             "url": {
-              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/finalizacao",
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/diagnostico",
               "host": [
                 "{{baseUrl}}"
               ],
               "path": [
                 "ordens-servico",
                 "{{osId}}",
-                "finalizacao"
+                "diagnostico"
               ]
             },
             "auth": {
@@ -3397,7 +3259,101 @@
                 }
               ]
             },
-            "description": "**Perfil:** MECANICO"
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"diagnosticoTecnico\": \"Tentativa\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[acesso negado] Cliente inicia diagnóstico",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/diagnostico/inicio",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "diagnostico",
+                "inicio"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE"
+          }
+        },
+        {
+          "name": "Mecânico inicia diagnóstico",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = EM_DIAGNOSTICO', () => pm.expect(pm.response.json().status).to.eql(\"EM_DIAGNOSTICO\"));",
+                  "pm.test('Mecânico atribuído', () => pm.expect(pm.response.json().mecanicoId).to.be.a('number'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/diagnostico/inicio",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "diagnostico",
+                "inicio"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO\n\nRECEBIDA → EM_DIAGNOSTICO. O funcionário autenticado vira o mecânico da OS."
           }
         },
         {
@@ -3451,7 +3407,7 @@
           }
         },
         {
-          "name": "Registrar diagnóstico",
+          "name": "Registrar diagnóstico e enviar orçamento",
           "event": [
             {
               "listen": "test",
@@ -3459,7 +3415,8 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('status = EM_ANDAMENTO', () => pm.expect(pm.response.json().status).to.eql(\"EM_ANDAMENTO\"));"
+                  "pm.test('status = AGUARDANDO_APROVACAO', () => pm.expect(pm.response.json().status).to.eql(\"AGUARDANDO_APROVACAO\"));",
+                  "pm.test('statusAprovacaoRejeicao = PENDENTE', () => pm.expect(pm.response.json().statusAprovacaoRejeicao).to.eql(\"PENDENTE\"));"
                 ]
               }
             }
@@ -3488,7 +3445,7 @@
                 }
               ]
             },
-            "description": "**Perfil:** MECANICO\n\nABERTA → EM_ANDAMENTO: agora o estoque das peças da OS é baixado.",
+            "description": "**Perfil:** MECANICO\n\nEM_DIAGNOSTICO → AGUARDANDO_APROVACAO, com aprovação PENDENTE. O estoque ainda não muda.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"diagnosticoTecnico\": \"Filtro saturado e óleo vencido\"\n}",
@@ -3501,7 +3458,199 @@
           }
         },
         {
-          "name": "Saldo da peça após o diagnóstico",
+          "name": "[erro] Alterar itens aguardando aprovação",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 409', () => pm.response.to.have.status(409));",
+                  "pm.test('codigo OS_ITEM_NAO_EDITAVEL', () => pm.expect(pm.response.json().codigo).to.eql('OS_ITEM_NAO_EDITAVEL'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/pecas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "pecas"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pecaInsumoId\": {{pecaId}},\n  \"quantidade\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[acesso negado] Mecânico aprova orçamento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 403', () => pm.response.to.have.status(403));",
+                  "pm.test('codigo ACESSO_NEGADO', () => pm.expect(pm.response.json().codigo).to.eql('ACESSO_NEGADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/aprovacao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "aprovacao"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aprovado\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Saldo da peça aguardando aprovação (inalterado)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('quantidadeEstoque = 10', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(10));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "Cliente aprova o orçamento",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = EM_EXECUCAO', () => pm.expect(pm.response.json().status).to.eql(\"EM_EXECUCAO\"));",
+                  "pm.test('statusAprovacaoRejeicao = APROVADO', () => pm.expect(pm.response.json().statusAprovacaoRejeicao).to.eql(\"APROVADO\"));",
+                  "pm.test('Guarda o agendamento do serviço', () => pm.expect(pm.response.json().agendamentoServico).to.be.a('string'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{osId}}/aprovacao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{osId}}",
+                "aprovacao"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE\n\nAGUARDANDO_APROVACAO → EM_EXECUCAO: agora o estoque das peças da OS é baixado.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aprovado\": true,\n  \"agendamentoServico\": \"2026-11-12T09:00:00-03:00\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Saldo da peça após a aprovação",
           "event": [
             {
               "listen": "test",
@@ -3549,7 +3698,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('Status 200', () => pm.response.to.have.status(200));",
-                  "pm.test('status = CONCLUIDA', () => pm.expect(pm.response.json().status).to.eql(\"CONCLUIDA\"));",
+                  "pm.test('status = FINALIZADA', () => pm.expect(pm.response.json().status).to.eql(\"FINALIZADA\"));",
                   "pm.test('Registra dataConclusao', () => pm.expect(pm.response.json().dataConclusao).to.be.a('string'));"
                 ]
               }
@@ -3583,7 +3732,7 @@
           }
         },
         {
-          "name": "[erro] Incluir item depois de concluída",
+          "name": "[erro] Incluir item depois de finalizada",
           "event": [
             {
               "listen": "test",
@@ -3716,6 +3865,378 @@
               ]
             },
             "description": "**Perfil:** CLIENTE"
+          }
+        },
+        {
+          "name": "Orçar 1000 peças na OS do segundo cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}/pecas",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{os2Id}}",
+                "pecas"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO\n\nAntes da aprovação a peça só é orçada, então o pedido passa mesmo sem saldo.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"pecaInsumoId\": {{pecaId}},\n  \"quantidade\": 1000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Iniciar diagnóstico da OS do segundo cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = EM_DIAGNOSTICO', () => pm.expect(pm.response.json().status).to.eql(\"EM_DIAGNOSTICO\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}/diagnostico/inicio",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{os2Id}}",
+                "diagnostico",
+                "inicio"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN"
+          }
+        },
+        {
+          "name": "Enviar orçamento da OS do segundo cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = AGUARDANDO_APROVACAO', () => pm.expect(pm.response.json().status).to.eql(\"AGUARDANDO_APROVACAO\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}/diagnostico",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{os2Id}}",
+                "diagnostico"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"diagnosticoTecnico\": \"Revisão completa\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[acesso negado] Cliente aprova orçamento de outro cliente",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 404', () => pm.response.to.have.status(404));",
+                  "pm.test('codigo RECURSO_NAO_ENCONTRADO', () => pm.expect(pm.response.json().codigo).to.eql('RECURSO_NAO_ENCONTRADO'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}/aprovacao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{os2Id}}",
+                "aprovacao"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenCliente}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** CLIENTE\n\nRecurso de outro cliente responde 404, como se não existisse (evita enumeração).",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aprovado\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "[erro] Aprovação sem saldo para as peças",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 422', () => pm.response.to.have.status(422));",
+                  "pm.test('codigo ESTOQUE_INSUFICIENTE', () => pm.expect(pm.response.json().codigo).to.eql('ESTOQUE_INSUFICIENTE'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}/aprovacao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{os2Id}}",
+                "aprovacao"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN\n\nA baixa acontece na aprovação; sem saldo, nada muda.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aprovado\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "OS sem saldo continua aguardando aprovação",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = AGUARDANDO_APROVACAO', () => pm.expect(pm.response.json().status).to.eql(\"AGUARDANDO_APROVACAO\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{os2Id}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
+          }
+        },
+        {
+          "name": "Orçamento rejeitado finaliza a OS",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('status = FINALIZADA', () => pm.expect(pm.response.json().status).to.eql(\"FINALIZADA\"));",
+                  "pm.test('statusAprovacaoRejeicao = REJEITADO', () => pm.expect(pm.response.json().statusAprovacaoRejeicao).to.eql(\"REJEITADO\"));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/ordens-servico/{{os2Id}}/aprovacao",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "ordens-servico",
+                "{{os2Id}}",
+                "aprovacao"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenAdmin}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** ADMIN\n\nAGUARDANDO_APROVACAO → FINALIZADA sem execução; o estoque não muda.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"aprovado\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "Saldo da peça após a rejeição (inalterado)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                  "pm.test('quantidadeEstoque = 8', () => pm.expect(pm.response.json().quantidadeEstoque).to.eql(8));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/pecas/{{pecaId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "pecas",
+                "{{pecaId}}"
+              ]
+            },
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{tokenMecanico}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "description": "**Perfil:** MECANICO"
           }
         }
       ]

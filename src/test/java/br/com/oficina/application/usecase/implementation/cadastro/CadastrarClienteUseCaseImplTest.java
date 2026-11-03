@@ -132,8 +132,8 @@ class CadastrarClienteUseCaseImplTest {
         }
 
         @Override
-        public Optional<Cliente> findByDocumento(Documento documento) {
-            return clientes.stream().filter(c -> c.documento().equals(documento)).findFirst();
+        public Optional<Cliente> findByCpfCnpj(Documento cpfCnpj) {
+            return clientes.stream().filter(c -> c.cpfCnpj().equals(cpfCnpj)).findFirst();
         }
 
         @Override
@@ -142,8 +142,8 @@ class CadastrarClienteUseCaseImplTest {
         }
 
         @Override
-        public boolean existsByDocumento(Documento documento) {
-            return findByDocumento(documento).isPresent();
+        public boolean existsByCpfCnpj(Documento cpfCnpj) {
+            return findByCpfCnpj(cpfCnpj).isPresent();
         }
 
         @Override

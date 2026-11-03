@@ -14,7 +14,7 @@ import jakarta.persistence.Table;
 import java.time.Instant;
 
 @Entity
-@Table(name = "usuarios")
+@Table(name = "tb_usuarios")
 public class UsuarioEntity {
 
     @Id

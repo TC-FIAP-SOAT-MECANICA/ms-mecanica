@@ -13,13 +13,13 @@ public interface ClienteRepository {
 
     Optional<Cliente> findById(Integer id);
 
-    Optional<Cliente> findByDocumento(Documento documento);
+    Optional<Cliente> findByCpfCnpj(Documento cpfCnpj);
 
     Optional<Integer> findIdByUsuarioId(Integer usuarioId);
 
     List<Cliente> findByUsuarioIds(Collection<Integer> usuarioIds);
 
-    boolean existsByDocumento(Documento documento);
+    boolean existsByCpfCnpj(Documento cpfCnpj);
 
     boolean existsById(Integer id);
 }

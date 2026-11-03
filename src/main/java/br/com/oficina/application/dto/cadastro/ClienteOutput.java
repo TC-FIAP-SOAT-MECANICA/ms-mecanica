@@ -9,8 +9,8 @@ public record ClienteOutput(Integer id, Integer usuarioId, String tipoDocumento,
                             String email, String telefone, Instant criadoEm) {
 
     public static ClienteOutput from(Cliente cliente, ContatoUsuario contato) {
-        return new ClienteOutput(cliente.id(), cliente.usuarioId(), cliente.documento().tipo().name(),
-                cliente.documento().valor(), contato.nome(), contato.email(), contato.telefone(),
+        return new ClienteOutput(cliente.id(), cliente.usuarioId(), cliente.cpfCnpj().tipo().name(),
+                cliente.cpfCnpj().valor(), contato.nome(), contato.email(), contato.telefone(),
                 contato.criadoEm());
     }
 }
