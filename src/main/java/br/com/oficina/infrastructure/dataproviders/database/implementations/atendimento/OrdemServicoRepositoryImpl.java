@@ -4,6 +4,7 @@ import br.com.oficina.application.dto.shared.PageQuery;
 import br.com.oficina.application.dto.shared.PageResult;
 import br.com.oficina.application.gateways.atendimento.OrdemServicoRepository;
 import br.com.oficina.domain.model.atendimento.OrdemServico;
+import br.com.oficina.domain.model.atendimento.StatusAprovacao;
 import br.com.oficina.domain.model.atendimento.StatusOrdemServico;
 import br.com.oficina.infrastructure.dataproviders.database.entities.atendimento.OrdemServicoEntity;
 import br.com.oficina.infrastructure.dataproviders.database.mappers.PageMapper;
@@ -14,12 +15,17 @@ import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
 @Component
 class OrdemServicoRepositoryImpl implements OrdemServicoRepository {
+
+    private static final List<StatusOrdemServico> CONCLUIDAS =
+            List.of(StatusOrdemServico.FINALIZADA, StatusOrdemServico.ENTREGUE);
 
     private final OrdemServicoJpaRepository jpaRepository;
 
@@ -58,5 +64,14 @@ class OrdemServicoRepositoryImpl implements OrdemServicoRepository {
         };
         var pageable = PageMapper.toPageable(pageQuery, Sort.by(Sort.Direction.DESC, "dataAbertura", "id"));
         return PageMapper.toResult(jpaRepository.findAll(filtro, pageable), OrdemServicoEntity::toDomain);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<Duration> temposDeExecucao(Instant concluidasDesde, Instant concluidasAte) {
+        return jpaRepository.findPeriodosDeExecucao(CONCLUIDAS, StatusAprovacao.APROVADO, concluidasDesde,
+                        concluidasAte).stream()
+                .map(periodo -> Duration.between(periodo.getDataAbertura(), periodo.getDataConclusao()))
+                .toList();
     }
 }

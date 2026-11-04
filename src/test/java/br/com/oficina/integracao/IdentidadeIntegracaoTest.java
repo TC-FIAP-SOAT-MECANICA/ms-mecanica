@@ -109,8 +109,10 @@ class IdentidadeIntegracaoTest extends IntegracaoTest {
     }
 
     @Test
-    void metricasAindaNaoImplementadas() throws Exception {
-        get("/metricas/tempo-medio-execucao?dataInicio=2026-01-01&dataFim=2026-01-31", tokenAdmin())
-                .andExpect(status().isNotImplemented());
+    void metricasSoParaAdmin() throws Exception {
+        String metrica = "/metricas/tempo-medio-execucao?dataInicio=2026-01-01&dataFim=2026-01-31";
+
+        get(metrica, tokenAdmin()).andExpect(status().isOk());
+        get(metrica, novoCliente().token()).andExpect(status().isForbidden());
     }
 }

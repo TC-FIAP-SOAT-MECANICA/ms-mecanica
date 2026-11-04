@@ -4,6 +4,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.web.servlet.ResultActions;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
+
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.is;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -210,6 +214,35 @@ class OrdemServicoIntegracaoTest extends IntegracaoTest {
     }
 
     @Test
+    void tempoMedioDeExecucaoConsideraSoAsOrdensExecutadas() throws Exception {
+        LocalDate hoje = LocalDate.now(ZoneId.of("America/Sao_Paulo"));
+        String metrica = "/metricas/tempo-medio-execucao?dataInicio=%s&dataFim=%s"
+                .formatted(hoje.minusDays(1), hoje.plusDays(1));
+        int antes = ordensConsideradas(metrica);
+
+        String rejeitada = aguardandoAprovacao(1);
+        post(rejeitada + "/aprovacao", admin, """
+                {"aprovado": false}""").andExpect(status().isOk());
+        assertThat(ordensConsideradas(metrica)).isEqualTo(antes);
+
+        String executada = aguardandoAprovacao(1);
+        post(executada + "/aprovacao", admin, """
+                {"aprovado": true}""").andExpect(status().isOk());
+        post(executada + "/finalizacao", mecanico, null).andExpect(status().isOk());
+        get(metrica, admin)
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.periodoInicio").value(hoje.minusDays(1).toString()))
+                .andExpect(jsonPath("$.periodoFim").value(hoje.plusDays(1).toString()))
+                .andExpect(jsonPath("$.totalOrdensConsideradas").value(antes + 1))
+                .andExpect(jsonPath("$.tempoMedioExecucaoMinutos").isNumber());
+
+        get(metrica, mecanico).andExpect(status().isForbidden());
+        get("/metricas/tempo-medio-execucao?dataInicio=2024-01-01&dataFim=2026-01-01", admin)
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.codigo").value("VALIDACAO"));
+    }
+
+    @Test
     void registrosUsadosEmOrdemNaoSaoRemovidos() throws Exception {
         abrir("");
 
@@ -240,6 +273,10 @@ class OrdemServicoIntegracaoTest extends IntegracaoTest {
         post(os + "/diagnostico", mecanico, """
                 {"diagnosticoTecnico": "Laudo"}""").andExpect(status().isOk());
         return os;
+    }
+
+    private int ordensConsideradas(String metrica) throws Exception {
+        return ler(get(metrica, admin).andExpect(status().isOk()), "$.totalOrdensConsideradas");
     }
 
     private ResultActions saldo(Integer peca) throws Exception {

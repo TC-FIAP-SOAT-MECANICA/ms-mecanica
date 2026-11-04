@@ -200,6 +200,11 @@ Cadastro, Catálogo e Estoque, e o Cadastro obtém nome, e-mail e telefone do cl
 | `/api/v1/actuator/health` | Saúde da aplicação (`/liveness` e `/readiness` para orquestradores) |
 | `/api/v1/actuator/prometheus` | Métricas no formato do Prometheus |
 | `/api/v1/actuator/metrics` | Navegar pelas métricas disponíveis (ADMIN) |
+| `/api/v1/metricas/tempo-medio-execucao?dataInicio=2026-11-01&dataFim=2026-11-30` | Tempo médio de execução das OS no período (ADMIN) |
+
+O tempo médio vai da abertura à conclusão das OS com orçamento **aprovado** concluídas no período (dias no horário de
+Brasília, no máximo 366). OS com orçamento rejeitado não entram, porque são encerradas sem executar o serviço. A
+resposta traz quantas OS entraram na conta; sem nenhuma, `tempoMedioExecucaoMinutos` vem nulo.
 
 Toda resposta traz o header `X-Request-Id`; nas respostas de erro ele também vem no campo `traceId`. Cada chamada
 gera uma linha no log com método, rota, status e tempo (`docker compose logs -f app`).
